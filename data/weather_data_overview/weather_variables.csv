@@ -1,0 +1,19 @@
+VariableName;ParameterGroup;Resolution;Unit;Description
+Temperature_avg_hourly;temperature;hourly;degrees Celsius;Air temperature 2 m above ground - hourly average
+Temperature_max_daily;temperature;daily;degrees Celsius;Air temperature 2 m above ground - daily maximum
+Temperature_min_daily;temperature;daily;degrees Celsius;Air temperature 2 m above ground - daily minimum
+Temperature_avg_daily;temperature;daily;degrees Celsius;Air temperature 2 m above ground - daily average
+HeatingDegree_SIA_daily;temperature;daily;degrees Celsius;Heating degree number 12/20 (SIA: heating degree days)
+HeatingDegree_US_daily;temperature;daily;degrees Celsius;Heating degree number (HDD: Heating Degree Day, according to USA)
+CoolingDegree_US_daily;temperature;daily;degrees Celsius;Cooling degree number (CDD:Cooling Degree Day, according to USA)
+DewPoint_hourly;temperature;hourly;degrees Celsius;Dew point 2 m above ground - hourly instantaneous value
+Humidity_avg_hourly;humidity;hourly;percentage;Relative humidity 2 m above ground - hourly average
+Humidity_avg_daily;humidity;daily;percentage;Relative humidity 2 m above ground - daily average
+Precipitation_total_hourly;precipitation;hourly;millimeters;Precipitation - hourly total
+Precipitation_total_daily;precipitation;daily;millimeters;Precipitation - daily total from 0 UTC to 0 UTC
+Pressure_BarometricHeight_avg_hourly;air pressure;hourly;hectopascal;Air pressure at barometric height (QFE) - hourly average
+Pressure_SeaLevelStandardAtmosphere_avg_hourly;air pressure;hourly;hectopascal;Air pressure reduced to sea level with standard atmosphere (QNH) - hourly average
+Pressure_SeaLevel_avg_hourly;air pressure;hourly;hectopascal;Air pressure reduced to sea level (QFF) - hourly average
+Sunshine_duration_hourly;sunshine;hourly;hours;Sunshine duration - hourly total
+Sunshine_duration_daily;sunshine;daily;hours;Sunshine duration - daily total
+WindSpeed_hourly;wind;hourly;meters per second;Wind speed scalar - hourly average

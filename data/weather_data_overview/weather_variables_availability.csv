@@ -1,0 +1,9 @@
+Weather_ID;Temperature_avg_hourly;Temperature_max_daily;Temperature_min_daily;Temperature_avg_daily;HeatingDegree_SIA_daily;HeatingDegree_US_daily;CoolingDegree_US_daily;DewPoint_hourly;Humidity_avg_hourly;Humidity_avg_daily;Precipitation_total_hourly;Precipitation_total_daily;Pressure_BarometricHeight_avg_hourly;Pressure_SeaLevelStandardAtmosphere_avg_hourly;Pressure_SeaLevel_avg_hourly;Sunshine_duration_hourly;Sunshine_duration_daily;WindSpeed_hourly
+wDD;True;True;True;True;True;True;True;True;True;True;True;True;True;True;True;True;True;True
+MqO;True;True;True;True;True;True;True;True;True;True;True;True;True;True;False;True;True;True
+z6I;True;True;True;True;True;True;True;True;True;True;True;True;True;True;True;True;True;True
+Hg;True;True;True;True;True;True;True;True;True;True;True;True;True;True;True;True;True;True
+8jB;True;True;True;True;True;True;True;True;True;True;True;True;True;True;True;True;True;True
+HbsbG;True;True;True;True;True;True;True;True;True;True;True;True;False;False;False;False;False;True
+ceOxS;True;True;True;True;True;True;True;True;True;True;True;True;False;False;False;False;False;True
+sV3mR;True;True;True;True;True;True;True;True;True;True;True;True;False;False;False;False;False;True

@@ -1,0 +1,14 @@
+VariableName;Description
+Household_ID;unique household identifier
+Survey_Building_Type;type of building (house, appartment) - as declared by household in online tool
+Survey_Building_LivingArea;living area of building (in square meters) - as declared by household in online tool
+Survey_Building_Residents;number of household residents - as declared by household in online tool
+Survey_HeatPump_Installation_Type;heat pump type (air-source, ground-source) - as declared by household in online tool
+Survey_HeatDistribution_System_FloorHeating;indication if heat is distributed by floor heating - as declared by household in online tool
+Survey_HeatDistribution_System_Radiator;indication if heat is distributed by radiator - as declared by household in online tool
+Survey_DHW_Production_ByHeatPump;indication if domestic hot water is produced by the heat pump - as declared by household in online tool
+Survey_DHW_Production_ByElectricWaterHeater;indication if domestic hot water is produced by electric water heater - as declared by household in online tool
+Survey_DHW_Production_BySolar;indication if domestic hot water is produced by solar collector - as declared by household in online tool
+Survey_Installation_HasDryer;indication if household has a dryer or tumbler - as declared by household in online tool
+Survey_Installation_HasFreezer;indication if household has a fridge-freezer - as declared by household in online tool
+Survey_Installation_HasElectricVehicle;indication if household has an electric vehicle - as declared by household in online tool
