@@ -10,10 +10,16 @@ challenge. The full problem statement, data dictionary, and the four complexity 
 modeling work, it is the spec. `discussion.md` tracks live decisions (candidate model
 families: ProLoaF, Crystal). `prompts/level1_proloaf_prompt.md` is a self-contained
 task brief for the Level 1 (PV-group detection + grouped forecasting) workstream using
-ProLoaF — treat it as the current plan of record for that level unless told otherwise.
+ProLoaF — it's the historical starting point, not the current scope (see below).
 
-`src/` now contains the Level 1 pipeline (see below); there are still no tests and no
-lint config.
+**Work here now spans Levels 1-3, not just Level 1.** `src/` contains one forecasting
+pipeline built up across all three: PV-group detection + grouped models (Level 1),
+grouped-vs-ungrouped comparison on day-ahead-procurement-relevant metrics, not just raw
+accuracy (Level 2), and prediction-interval uncertainty with an honest calibration check
+(Level 3). Level 0 (a single baseline model) was never a separate deliverable --
+`all_households_group`, built for the Level 2 comparison, already serves as that
+baseline. `reports/report.md` is the single write-up covering all of it; there are still
+no tests and no lint config.
 
 ## Environment
 
@@ -37,7 +43,7 @@ afterwards so `uv.lock` and the venv stay in sync with `pyproject.toml`.)
 There is no lint/format/test tooling configured — don't assume `ruff`/`pytest`/etc. exist
 until they're added to `pyproject.toml`.
 
-## Level 1 pipeline (`src/`)
+## Forecasting pipeline, Levels 1-3 (`src/`)
 
 Run in order (each stage writes its outputs to `reports/`, consumed by the next stage):
 
@@ -105,7 +111,7 @@ python3 -m src.feature_ablation  # optional: leave-one-feature-out impact on por
   `horizon` ranks top by gain but costs nothing to remove) — see the report's "Feature
   ablation" subsection in §4.
 
-Full write-up of methodology, results, and known simplifications: `reports/level1_report.md`.
+Full write-up of methodology, results, and known simplifications: `reports/report.md`.
 ProLoaF (the brief's primary choice) was not installed/used — installing its setup code
 from an external git repo wasn't approved for this sandboxed session, so LightGBM is used
 as the documented fallback instead; see the report's §1 for details before assuming
@@ -148,7 +154,7 @@ names.
 Resolution mismatch is a first-class problem: smart-meter data is 15-min, weather is
 hourly. You must explicitly choose and justify a resampling strategy (upsample weather,
 aggregate consumption to hourly, or otherwise) — this is called out in the README as
-something graders look for, not an incidental detail. The Level 1 pipeline
+something graders look for, not an incidental detail. The forecasting pipeline
 (`src/aggregate.py`) upsamples weather to 15-min via time-based linear interpolation and
 keeps consumption at its native 15-min resolution, rather than the reverse (an earlier
 version of this pipeline aggregated consumption up to hourly instead) — see
