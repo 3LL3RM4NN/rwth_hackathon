@@ -40,29 +40,22 @@ model hides entirely — useful for procurement risk management on its own. On
 coverage, PICP, is 74–85% against a 90% nominal target, worst for the noisier PV group)
 — reported as a real calibration gap, not tuned away.
 
-## Previous evaluation of different models
+## Previous evaluation of different models (full evaluation in leaderboard.csv)
 
 Before settling on the LightGBM approach above, a wider model sweep was
-run across tree, deep-learning, foundation (zero-shot) and naive-baseline families, 
-scored on portfolio-level normalized MAE (`port_nMAE_%`) and daily/household MAE:
+run across tree, deep-learning, foundation (zero-shot) and naive-baseline families (15 models in total, informative selection shown), 
+scored on portfolio-level normalized MAE (`nMAE`):
 
-| Model | Family | Track | Port MAE (kWh) | Port nMAE % | Coverage 10–90 |
-|---|---|---|---:|---:|---:|
-| LightGBM_W0_v2 | tree (v2) | W0 | 39.72 | **14.07** | 0.765 |
-| CatBoost_W0_v2 | tree (v2) | W0 | 39.87 | 14.12 | 0.770 |
-| CatBoost_W0 | tree | W0 | 40.32 | 14.28 | 0.766 |
-| Ensemble_W0 | ensemble | W0 | 40.65 | 14.40 | 0.765 |
-| LightGBM_W0 | tree | W0 | 40.95 | 14.51 | 0.771 |
-| HGB_W0 | tree | W0 | 41.16 | 14.58 | 0.762 |
-| Toto2_target-only | foundation (zero-shot) | target-only | 42.00 | 14.88 | 0.775 |
-| PatchTST_target-only | deep (trained) | target-only | 42.93 | 15.21 | 0.775 |
-| Blend | baseline | target-only | 44.31 | 15.70 | 0.778 |
-| Chronos2_W0 | foundation (zero-shot) | W0 | 47.84 | 16.95 | 0.762 |
-| NHITS_W0 | deep (trained) | W0 | 49.30 | 17.46 | 0.765 |
-| B3_weekmean | baseline | target-only | 45.60 | 16.15 | 0.777 |
-| B2_twodays | baseline | target-only | 48.31 | 17.11 | 0.778 |
-| TFT_W0 | deep (trained) | W0 | 56.74 | 20.10 | 0.749 |
-| B1_lastweek | baseline | target-only | 57.66 | 20.42 | 0.767 |
+
+| Model | Family | Portfolio error (nMAE) | Coverage 10–90 (target 80%) |
+|---|---|---|---|
+| **LightGBM** | Tree model | **14.07%** | 76% |
+| CatBoost | Tree model | 14.12% | 77% |
+| Toto 2.0 | Pretrained AI model (no training on our data) | 14.88% | 78% |
+| Chronos-2 | Pretrained AI model (no training on our data) | 16.95% | 76% |
+| Same hour last week | Simple rule (baseline) | 20.42% | 77% |
+
+
 
 **Takeaway:** gradient-boosted trees (LightGBM/CatBoost, with weather + calendar
 features, track "W0") win outright — foundation zero-shot models (Chronos-2, Toto 2.0)
