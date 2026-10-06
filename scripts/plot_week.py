@@ -32,8 +32,8 @@ STYLE = {
 PANELS = [
     ("Strict weather", "LightGBM_W0_v2", "LightGBM v2", "Chronos2_W0", False),
     ("Strict weather", "LightGBM_W0_v2", "LightGBM v2", "Chronos2_W0", True),
-    ("Actual weather (best case)", "LightGBM_W2_oracle", "LightGBM", "Chronos2_W2_oracle", False),
-    ("Actual weather (best case)", "LightGBM_W2_oracle", "LightGBM", "Chronos2_W2_oracle", True),
+    ("Actual weather", "LightGBM_W2_oracle", "LightGBM", "Chronos2_W2_oracle", False),
+    ("Actual weather", "LightGBM_W2_oracle", "LightGBM", "Chronos2_W2_oracle", True),
 ]
 OUT = ROOT / "results"
 
@@ -137,7 +137,7 @@ def main() -> None:
 def render(wk: pl.DataFrame, span: str, compact: bool) -> None:
     """All 7 figures. compact=True: about half the height, legend on the right (for one-page layouts)."""
     sfx, fs = ("_compact", 9) if compact else ("", 10.5)
-    title = f"Forecast vs actual · {span} · 255 households"
+    title = "Model comparison"
     names = ["week_strict", "week_strict_chronos", "week_actualweather", "week_actualweather_chronos"]
 
     fig, axes = plt.subplots(2, 2, figsize=(20, 5.6) if compact else (18, 10.5), sharey=True, facecolor=SURFACE)
@@ -145,7 +145,7 @@ def render(wk: pl.DataFrame, span: str, compact: bool) -> None:
         draw(ax, wk, *panel, fs=8.5 if compact else 9.5, compact=compact)
     if compact:  # no separate title line: the date goes into the top panel titles
         for ax in axes[0]:
-            ax.set_title(f"{ax.get_title(loc='left')} · {span} · 255 households", loc="left", fontsize=11.5, color=INK, pad=5)
+            ax.set_title(f"{title} · {ax.get_title(loc='left').lower()}", loc="left", fontsize=11.5, color=INK, pad=5)
         fig.tight_layout(h_pad=1.2)
     else:
         fig.suptitle(title, x=0.01, y=0.98, ha="left", fontsize=17, color=INK)
@@ -160,7 +160,7 @@ def render(wk: pl.DataFrame, span: str, compact: bool) -> None:
         draw(a2, wk, *bottom, fs=fs, compact=compact)
         a1.set_ylim(*ylim)
         if compact:
-            a1.set_title(f"{a1.get_title(loc='left')} · {span} · 255 households", loc="left", fontsize=11.5, color=INK, pad=5)
+            a1.set_title(f"{title} · {a1.get_title(loc='left').lower()}", loc="left", fontsize=11.5, color=INK, pad=5)
             f.tight_layout(h_pad=1.0)
         else:
             f.suptitle(title, x=0.01, y=0.98, ha="left", fontsize=16, color=INK)
@@ -171,7 +171,8 @@ def render(wk: pl.DataFrame, span: str, compact: bool) -> None:
         f, ax = plt.subplots(figsize=(14, 2.9) if compact else (13, 5.6), facecolor=SURFACE)
         draw(ax, wk, *panel, fs=fs, compact=compact)
         ax.set_ylim(*ylim)
-        ax.set_title(f"{ax.get_title(loc='left')} · {span}", loc="left", fontsize=11.5 if compact else 14, color=INK,
+        single = title if panel[0] == "Strict weather" else f"{title} · actual weather"
+        ax.set_title(single, loc="left", fontsize=11.5 if compact else 14, color=INK,
                      pad=5 if compact else 52)
         f.tight_layout()
         f.savefig(OUT / f"{name}{sfx}.png", dpi=300, facecolor=SURFACE)
