@@ -8,18 +8,20 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "pandas (>=2.3.3,<3.0.0)",
-    "matplotlib (>=3.10.8,<4.0.0)",
+    "pandas (>=2.2.2,<2.3.0)",
+    "matplotlib (>=3.9.1,<4.0.0)",
     "polars (>=1.36.1,<2.0.0)",
-    "numpy (>=2.4.0,<3.0.0)",
-    "scikit-learn (>=1.8.0,<2.0.0)",
+    "numpy (>=2.0.0,<2.1.0)",
+    "scikit-learn (>=1.5.0,<2.0.0)",
     "jupyterlab (>=4.5.1,<5.0.0)",
     "seaborn (>=0.13.2,<0.14.0)",
     "lightgbm (>=4.7.0,<5.0.0)",
     "proloaf @ git+https://github.com/sogno-platform/proloaf.git"
 ]
 
-
-[build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+# Not an installable/distributed package (there's no "utils" module matching
+# [project].name -- the real code lives in src/, imported as "src.<module>").
+# uv is told not to build/install the project itself, just manage the
+# dependency set above.
+[tool.uv]
+package = false
