@@ -1,6 +1,6 @@
-# Bringing the Heat — Hackathon Summary
+# [Bringing the Heat — Hackathon Summary](https://github.com/3LL3RM4NN/rwth_hackathon)
 
-[Repository](https://github.com/3LL3RM4NN/rwth_hackathon)
+Team Binergy: Ramin Jalilian, Alexander Geiger, Johannes Jeup, Julian Eifert, Julius Ellermann
 
 A single pipeline covering Levels 0–3 of the brief, run in order:
 
