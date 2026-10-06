@@ -2,6 +2,7 @@
 
 Usage: .venv/bin/python -m scripts.run_pipeline
 """
+import time
 from datetime import date
 
 import matplotlib.pyplot as plt
@@ -13,11 +14,8 @@ from sklearn.ensemble import HistGradientBoostingRegressor
 from utils.data import PROCESSED, ROOT, build_processed
 from utils.evaluate import C_OVER, C_UNDER, bootstrap_regret_diff, point_metrics, portfolio, regret_per_mwh, rolling_quantile_bids
 from utils.features import BASE_FEATURES, W0_FEATURES, W2_FEATURES, build_features, check_availability
+from utils.splits import CALIB, FIT_END, TEST, TUNE, cohort as get_cohort, save_preds
 
-FIT_END = date(2022, 10, 29)
-TUNE = (date(2022, 11, 1), date(2022, 12, 29))
-CALIB = (date(2023, 1, 1), date(2023, 2, 27))
-TEST = (date(2023, 3, 1), date(2024, 2, 27))
 TAU_STAR = C_UNDER / (C_UNDER + C_OVER)
 RATIOS = [(1, 4), (1, 2), (1, 1), (5, 4), (2, 1), (4, 1)]  # c_under : c_over sweep
 OUT = ROOT / "results"
@@ -59,10 +57,29 @@ def main() -> None:
     # Global HGB: W0 = past-only weather (operational), W2 = actual weather on D (oracle diagnostic)
     feats_w0, feats_w2 = BASE_FEATURES + W0_FEATURES, list(dict.fromkeys(BASE_FEATURES + W2_FEATURES))
     pred = df.filter(pl.col("D") >= TUNE[0])
+    runtime = {}
     for name, feats in [("HGB_W0", feats_w0), ("HGB_W2_oracle", feats_w2)]:
+        t0 = time.time()
         m = fit_hgb(df, feats)
         pred = pred.with_columns(pl.Series(name, np.clip(m.predict(pred.select(feats).to_numpy()), 0, None)))
+        runtime[name] = round(time.time() - t0, 1)
     models = base + ["Blend", "HGB_W0", "HGB_W2_oracle"]
+
+    # Store every model in the common format used by scripts/leaderboard.py
+    meta = {
+        "B1_lastweek": ("baseline", "target-only", "same hour D-7"),
+        "B2_twodays": ("baseline", "target-only", "same hour D-2"),
+        "B3_weekmean": ("baseline", "target-only", "mean of same hour D-8..D-2"),
+        "Blend": ("baseline", "target-only", "NNLS blend of B1-B3, weights fit on tune block"),
+        "HGB_W0": ("tree", "W0", "lags, calendar, household info, past-only weather"),
+        "HGB_W2_oracle": ("tree", "W2_oracle", "as W0 plus actual weather on D"),
+    }
+    for m in models:
+        family, track, inputs = meta[m]
+        save_preds(m, pred.select("Household_ID", "hour", pred=pl.col(m)), {
+            "family": family, "track": track, "inputs": inputs, "point": "conditional mean",
+            "runtime_s": runtime.get(m, 0), "device": "cpu", "version": "scikit-learn HistGradientBoostingRegressor" if m.startswith("HGB") else "-",
+        })
 
     # ---- Household level (test, identical mask for all models). nMAE is pooled over household-hours;
     # median_hh_nMAE_% is the median of per-household nMAEs.
@@ -80,10 +97,7 @@ def main() -> None:
     hh_tab.write_csv(OUT / "household_metrics.csv")
 
     # ---- Portfolio over reporting members (cohort fixed with information up to 2022-12-29)
-    hist = df.filter(pl.col("D") <= date(2022, 12, 29), pl.col("kwh").is_not_null()).group_by("Household_ID").agg(
-        days=pl.len() / 24, recent=(pl.col("D") >= date(2022, 12, 16)).sum()
-    )
-    cohort = hist.filter(pl.col("days") >= 90, pl.col("recent") > 0)["Household_ID"].to_list()
+    cohort = get_cohort(df)
     port = portfolio(pred.filter(pl.col("D") >= CALIB[0]), cohort, models)
     pt = port.filter(pl.col("D").is_between(*TEST))
     assert pt["D"].n_unique() == 364, "test must cover 2023-03-01..2024-02-27"

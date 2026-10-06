@@ -65,21 +65,20 @@ def hourly_cost(y, q, c_under=C_UNDER, c_over=C_OVER) -> pl.Expr:
     return c_under * (y - q).clip(lower_bound=0) + c_over * (q - y).clip(lower_bound=0)
 
 
-def bootstrap_regret_diff(port: pl.DataFrame, bid_a: str, bid_b: str, block_days=7, n_boot=2000, seed=0) -> tuple[float, float]:
-    """95% interval of regret(a) - regret(b) in €/MWh. Paired moving-block bootstrap over contiguous
+def block_bootstrap_diff(port: pl.DataFrame, num_a: pl.Expr, num_b: pl.Expr, den: pl.Expr,
+                         block_days=7, n_boot=2000, seed=0) -> tuple[float, float]:
+    """95% interval of (sum num_a - sum num_b) / sum den. Paired moving-block bootstrap over contiguous
     `block_days`-day blocks, since weather and the rolling calibration make neighbouring days dependent."""
-    d = (
-        port.group_by("D")
-        .agg(
-            ca=hourly_cost(pl.col("y"), pl.col(bid_a)).sum(),
-            cb=hourly_cost(pl.col("y"), pl.col(bid_b)).sum(),
-            y=pl.col("y").sum(),
-        )
-        .sort("D")
-    )
-    ca, cb, y = (d[c].to_numpy() for c in ("ca", "cb", "y"))
-    n = len(y)
+    d = port.group_by("D").agg(a=num_a.sum(), b=num_b.sum(), den=den.sum()).sort("D")
+    a, b, den = (d[c].to_numpy() for c in ("a", "b", "den"))
+    n = len(den)
     starts = np.random.default_rng(seed).integers(0, n - block_days + 1, (n_boot, -(-n // block_days)))
     idx = (starts[:, :, None] + np.arange(block_days)).reshape(n_boot, -1)[:, :n]
-    diff = (ca[idx].sum(1) - cb[idx].sum(1)) / y[idx].sum(1)
+    diff = (a[idx].sum(1) - b[idx].sum(1)) / den[idx].sum(1)
     return tuple(np.percentile(diff, [2.5, 97.5]))
+
+
+def bootstrap_regret_diff(port: pl.DataFrame, bid_a: str, bid_b: str, **kw) -> tuple[float, float]:
+    """95% interval of regret(a) - regret(b) in €/MWh."""
+    y = pl.col("y")
+    return block_bootstrap_diff(port, hourly_cost(y, pl.col(bid_a)), hourly_cost(y, pl.col(bid_b)), y, **kw)
