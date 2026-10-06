@@ -69,7 +69,8 @@ def pick_week(port: pl.DataFrame) -> date:
     return chosen
 
 
-def draw(ax, wk: pl.DataFrame, title: str, main: str, main_label: str, chronos: str, with_chronos: bool, fs: float = 10.5) -> None:
+def draw(ax, wk: pl.DataFrame, title: str, main: str, main_label: str, chronos: str, with_chronos: bool,
+         fs: float = 10.5, compact: bool = False) -> None:
     x = wk["hour"].dt.convert_time_zone(TZ).dt.replace_time_zone(None).to_list()
     y = wk["y"].to_numpy()
     err = lambda col: 100 * np.abs(wk[col].to_numpy() - y).sum() / y.sum()
@@ -82,8 +83,8 @@ def draw(ax, wk: pl.DataFrame, title: str, main: str, main_label: str, chronos: 
         ax.plot(x, wk[chronos], **{**STYLE["Chronos2"], "label": f"Chronos-2 – error {err(chronos):.1f}%"})
     ax.plot(x, wk[main], color=STYLE["main"]["color"], lw=STYLE["main"]["lw"], label=f"{main_label} – error {err(main):.1f}%")
     ax.plot(x, y, **STYLE["actual"])
-    ax.set_title(title, loc="left", fontsize=14, color=INK, pad=52)
-    ax.set_ylabel("kWh per hour", fontsize=11, color="#52514e")
+    ax.set_title(title, loc="left", fontsize=11.5 if compact else 14, color=INK, pad=5 if compact else 52)
+    ax.set_ylabel("kWh per hour", fontsize=fs if compact else 11, color="#52514e")
     ax.xaxis.set_major_locator(mdates.DayLocator())
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%a %d %b"))
     ax.grid(axis="y", color=GRID, lw=0.8)
@@ -98,8 +99,10 @@ def draw(ax, wk: pl.DataFrame, title: str, main: str, main_label: str, chronos: 
     order = sorted(range(len(labels)), key=lambda i: (0 if labels[i] == "Actual" else 1 if labels[i].startswith(main_label + " –")
                                                       else 2 if "range" in labels[i] else 3 if "Chronos" in labels[i]
                                                       else 4 if "Toto" in labels[i] else 5))
-    leg = ax.legend([handles[i] for i in order], [labels[i] for i in order], loc="lower left", bbox_to_anchor=(0, 1.0),
-                    ncol=3, fontsize=fs, frameon=False, handlelength=1.8, columnspacing=1.4)
+    place = (dict(loc="center left", bbox_to_anchor=(1.01, 0.5), ncol=1) if compact      # right side: adds no height
+             else dict(loc="lower left", bbox_to_anchor=(0, 1.0), ncol=3))                  # above the plot
+    leg = ax.legend([handles[i] for i in order], [labels[i] for i in order], fontsize=fs, frameon=False,
+                    handlelength=1.8, columnspacing=1.4, **place)
     for t in leg.get_texts():
         t.set_color(INK)
 
@@ -126,35 +129,53 @@ def main() -> None:
     rank = week_rank(port, start)
     print(f"week of {start}: LightGBM v2 {rank}")
     wk = port.filter(pl.col("D").is_between(start, start + timedelta(days=6))).sort("hour")
+    span = f"{start:%-d}–{start + timedelta(days=6):%-d %b %Y}"
+    for compact in (False, True):
+        render(wk, span, compact)
+
+
+def render(wk: pl.DataFrame, span: str, compact: bool) -> None:
+    """All 7 figures. compact=True: about half the height, legend on the right (for one-page layouts)."""
+    sfx, fs = ("_compact", 9) if compact else ("", 10.5)
+    title = f"Forecast vs actual · {span} · 255 households"
     names = ["week_strict", "week_strict_chronos", "week_actualweather", "week_actualweather_chronos"]
 
-    fig, axes = plt.subplots(2, 2, figsize=(18, 10.5), sharey=True, facecolor=SURFACE)
+    fig, axes = plt.subplots(2, 2, figsize=(20, 5.6) if compact else (18, 10.5), sharey=True, facecolor=SURFACE)
     for ax, panel in zip(axes.ravel(), PANELS):
-        draw(ax, wk, *panel, fs=9.5)
-    span = f"{start:%-d}–{start + timedelta(days=6):%-d %b %Y}"
-    fig.suptitle(f"Forecast vs actual · {span} · 255 households", x=0.01, ha="left", fontsize=17, color=INK)
-    fig.tight_layout(rect=(0, 0, 1, 0.97), h_pad=2.5)
-    fig.savefig(OUT / "week_2x2.png", dpi=300, facecolor=SURFACE)
+        draw(ax, wk, *panel, fs=8.5 if compact else 9.5, compact=compact)
+    if compact:  # no separate title line: the date goes into the top panel titles
+        for ax in axes[0]:
+            ax.set_title(f"{ax.get_title(loc='left')} · {span} · 255 households", loc="left", fontsize=11.5, color=INK, pad=5)
+        fig.tight_layout(h_pad=1.2)
+    else:
+        fig.suptitle(title, x=0.01, y=0.98, ha="left", fontsize=17, color=INK)
+        fig.tight_layout(rect=(0, 0, 1, 0.97), h_pad=2.5)
+    fig.savefig(OUT / f"week_2x2{sfx}.png", dpi=300, facecolor=SURFACE)
+    ylim = axes[0, 0].get_ylim()  # same y-scale everywhere
 
-    # Stacked: strict weather on top, actual weather below (one figure without, one with Chronos-2)
+    # Stacked: strict weather on top, actual weather below (without / with Chronos-2)
     for name, (top, bottom) in [("week_stacked", (PANELS[0], PANELS[2])), ("week_stacked_chronos", (PANELS[1], PANELS[3]))]:
-        f, (a1, a2) = plt.subplots(2, 1, figsize=(13, 10.5), sharey=True, facecolor=SURFACE)
-        draw(a1, wk, *top)
-        draw(a2, wk, *bottom)
-        f.suptitle(f"Forecast vs actual · {span} · 255 households", x=0.01, ha="left", fontsize=16, color=INK)
-        f.tight_layout(rect=(0, 0, 1, 0.97), h_pad=2.5)
-        f.savefig(OUT / f"{name}.png", dpi=300, facecolor=SURFACE)
-    names += ["week_stacked", "week_stacked_chronos"]
+        f, (a1, a2) = plt.subplots(2, 1, figsize=(14, 5.3) if compact else (13, 10.5), sharey=True, facecolor=SURFACE)
+        draw(a1, wk, *top, fs=fs, compact=compact)
+        draw(a2, wk, *bottom, fs=fs, compact=compact)
+        a1.set_ylim(*ylim)
+        if compact:
+            a1.set_title(f"{a1.get_title(loc='left')} · {span} · 255 households", loc="left", fontsize=11.5, color=INK, pad=5)
+            f.tight_layout(h_pad=1.0)
+        else:
+            f.suptitle(title, x=0.01, y=0.98, ha="left", fontsize=16, color=INK)
+            f.tight_layout(rect=(0, 0, 1, 0.97), h_pad=2.5)
+        f.savefig(OUT / f"{name}{sfx}.png", dpi=300, facecolor=SURFACE)
 
-    ylim = axes[0, 0].get_ylim()  # same scale as the 2x2 figure
     for name, panel in zip(names, PANELS):
-        f, ax = plt.subplots(figsize=(13, 5.6), facecolor=SURFACE)
-        draw(ax, wk, *panel)
+        f, ax = plt.subplots(figsize=(14, 2.9) if compact else (13, 5.6), facecolor=SURFACE)
+        draw(ax, wk, *panel, fs=fs, compact=compact)
         ax.set_ylim(*ylim)
-        ax.set_title(f"{ax.get_title(loc='left')} · {span}", loc="left", fontsize=14, color=INK, pad=52)
+        ax.set_title(f"{ax.get_title(loc='left')} · {span}", loc="left", fontsize=11.5 if compact else 14, color=INK,
+                     pad=5 if compact else 52)
         f.tight_layout()
-        f.savefig(OUT / f"{name}.png", dpi=300, facecolor=SURFACE)
-    print("saved:", ", ".join(f"results/{n}.png" for n in ["week_2x2"] + names))
+        f.savefig(OUT / f"{name}{sfx}.png", dpi=300, facecolor=SURFACE)
+    print("saved:", ", ".join(f"results/{n}{sfx}.png" for n in ["week_2x2", "week_stacked", "week_stacked_chronos"] + names))
 
 
 if __name__ == "__main__":

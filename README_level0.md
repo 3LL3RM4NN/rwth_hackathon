@@ -108,7 +108,7 @@ Full table: `results/leaderboard.csv`.
 - **Bottom:** actual weather (best case). LightGBM drops to 6.5%. The gap between the two panels is the value of a good weather forecast.
 - In this week LightGBM v2 did better than in about two-thirds of the 49 test weeks. Over the whole year its error is 14.07%.
 
-Other versions are in `results/`: with Chronos-2 (`week_stacked_chronos.png`), a 2×2 overview (`week_2x2.png`) and single panels (`week_strict*.png`, `week_actualweather*.png`). Created with `scripts/plot_week.py --week 2024-01-01`.
+Other versions are in `results/`: with Chronos-2 (`week_stacked_chronos.png`), a 2×2 overview (`week_2x2.png`) and single panels (`week_strict*.png`, `week_actualweather*.png`). Every figure also has a **`_compact`** version: about half the height, legend on the right, for one-page layouts. Created with `scripts/plot_week.py --week 2024-01-01`.
 
 ### Findings
 
