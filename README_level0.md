@@ -100,6 +100,16 @@ The portfolio total in each hour is summed over the households whose meters repo
 
 Full table: `results/leaderboard.csv`.
 
+### One-week example (1–7 Jan 2024)
+
+![Forecast vs actual, 1–7 Jan 2024](results/week_stacked.png)
+
+- **Top:** strict weather (usable forecast). LightGBM v2 follows the actual consumption with an 11.0% error this week; the 10–90% range is shaded.
+- **Bottom:** actual weather (best case). LightGBM drops to 6.5%. The gap between the two panels is the value of a good weather forecast.
+- In this week LightGBM v2 did better than in about two-thirds of the 49 test weeks. Over the whole year its error is 14.07%.
+
+Other versions are in `results/`: with Chronos-2 (`week_stacked_chronos.png`), a 2×2 overview (`week_2x2.png`) and single panels (`week_strict*.png`, `week_actualweather*.png`). Created with `scripts/plot_week.py --week 2024-01-01`.
+
 ### Findings
 
 1. **Tree models with good features win.** LightGBM v2 is the best model and reliably better than our original model.
