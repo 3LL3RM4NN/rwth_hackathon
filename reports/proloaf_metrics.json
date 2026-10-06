@@ -1,0 +1,30 @@
+{
+  "pv_group": {
+    "name": "pv_group",
+    "n_households": 131,
+    "n_day_ahead_windows": 83,
+    "test_origin_range": [
+      "2023-12-07 00:00:00",
+      "2024-02-27 00:00:00"
+    ],
+    "mae": 36.861270904541016,
+    "rmse": 45.90679931640625,
+    "mape": 0.1923651397228241,
+    "mae_per_household": 0.2813837473629085,
+    "picp": 0.8835341365461847
+  },
+  "non_pv_group": {
+    "name": "non_pv_group",
+    "n_households": 114,
+    "n_day_ahead_windows": 130,
+    "test_origin_range": [
+      "2023-10-21 00:00:00",
+      "2024-02-27 00:00:00"
+    ],
+    "mae": 22.2554931640625,
+    "rmse": 27.517656326293945,
+    "mape": 0.12079869955778122,
+    "mae_per_household": 0.19522362424616227,
+    "picp": 0.9362179487179487
+  }
+}

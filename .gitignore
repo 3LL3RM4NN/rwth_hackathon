@@ -4,3 +4,5 @@ __pycache__/
 .ipynb_checkpoints/
 eventlog.log
 targets/*/logs/
+uv.lock
+RNN_best_*.pt
