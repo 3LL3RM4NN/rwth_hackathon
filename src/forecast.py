@@ -147,6 +147,24 @@ def _hours_before(timestamps: pd.DatetimeIndex, hours: int) -> pd.DatetimeIndex:
     return timestamps - pd.Timedelta(hours * 60, unit="m")
 
 
+def mean_squared_percentage_error(y_true, y_pred) -> float:
+    """L2 analogue of MAPE: mean of squared *relative* errors, i.e. the
+    percentage-scale counterpart to MSE the same way MAPE is the
+    percentage-scale counterpart to MAE. Floors the denominator at
+    ``np.finfo(float64).eps`` (not 0), matching sklearn's own
+    ``mean_absolute_percentage_error`` so both percentage metrics treat
+    near-zero actuals the same way. Scale-invariant to the
+    per-household-vs-rescaled-to-total distinction used everywhere else in
+    this module, for the same reason MAPE is (see train_and_evaluate):
+    rescaling both y_true and y_pred by the same factor leaves the ratio
+    unchanged, so there's no separate "_total" version, same as MAPE.
+    """
+    y_true = np.asarray(y_true, dtype=np.float64)
+    y_pred = np.asarray(y_pred, dtype=np.float64)
+    denom = np.maximum(np.abs(y_true), np.finfo(np.float64).eps)
+    return float(np.mean(((y_pred - y_true) / denom) ** 2))
+
+
 def load_group_15min(name: str) -> pd.DataFrame:
     df = pd.read_csv(f"reports/{name}_15min.csv", index_col=0, parse_dates=True)
     return df
@@ -303,6 +321,11 @@ def train_and_evaluate(name: str, n_households: int) -> dict:
     mse = mean_squared_error(test["y"], pred)
     rmse = mse ** 0.5
     mape = mean_absolute_percentage_error(test["y"], pred)
+    # mspe/rmspe: L2's percentage-scale counterpart, same way mape is MAE's
+    # (see mean_squared_percentage_error's docstring) -- also scale-invariant,
+    # so also just one value, no "_total" version.
+    mspe = mean_squared_percentage_error(test["y"], pred)
+    rmspe = mspe ** 0.5
 
     count = test["active_household_count"]
     y_total = test["y"] * count
@@ -345,6 +368,8 @@ def train_and_evaluate(name: str, n_households: int) -> dict:
         "mse_per_household": float(mse),
         "rmse_per_household": float(rmse),
         "mape": float(mape),
+        "mspe": float(mspe),
+        "rmspe": float(rmspe),
         "mae_total": float(mae_total),
         "mse_total": float(mse_total),
         "rmse_total": float(rmse_total),
@@ -383,7 +408,7 @@ if __name__ == "__main__":
         print(
             f"MAE/household={res['mae_per_household']:.4f} kWh/15min  "
             f"MSE/household={res['mse_per_household']:.4f}  RMSE/household={res['rmse_per_household']:.4f}  "
-            f"MAPE={res['mape']*100:.1f}%"
+            f"MAPE={res['mape']*100:.1f}%  RMSPE={res['rmspe']*100:.1f}%"
         )
         print(f"MAE (rescaled to group total)={res['mae_total']:.2f} kWh/15min  "
               f"MSE (rescaled)={res['mse_total']:.2f}")
@@ -416,6 +441,8 @@ if __name__ == "__main__":
         mse = mean_squared_error(preds["y"], preds["pred"])
         rmse = mse ** 0.5
         mape = mean_absolute_percentage_error(preds["y"], preds["pred"])
+        mspe = mean_squared_percentage_error(preds["y"], preds["pred"])
+        rmspe = mspe ** 0.5
         y_total = preds["y"] * preds["active_household_count"]
         pred_total = preds["pred"] * preds["active_household_count"]
         mae_total = mean_absolute_error(y_total, pred_total)
@@ -428,6 +455,8 @@ if __name__ == "__main__":
             "mse_per_household": float(mse),
             "rmse_per_household": float(rmse),
             "mape": float(mape),
+            "mspe": float(mspe),
+            "rmspe": float(rmspe),
             "mae_total": float(mae_total),
             "mse_total": float(mse_total),
             "rmse_total": float(rmse_total),
@@ -473,6 +502,8 @@ if __name__ == "__main__":
     portfolio_mse = mean_squared_error(portfolio_y, portfolio_pred)
     portfolio_rmse = portfolio_mse ** 0.5
     portfolio_mape = mean_absolute_percentage_error(portfolio_y, portfolio_pred)
+    portfolio_mspe = mean_squared_percentage_error(portfolio_y, portfolio_pred)
+    portfolio_rmspe = portfolio_mspe ** 0.5
     comparison["grouped_portfolio_wide"] = {
         "n_households": grouped_hh_sum,
         "n_rows": int(len(portfolio)),
@@ -480,6 +511,8 @@ if __name__ == "__main__":
         "mse_total": float(portfolio_mse),
         "rmse_total": float(portfolio_rmse),
         "mape": float(portfolio_mape),
+        "mspe": float(portfolio_mspe),
+        "rmspe": float(portfolio_rmspe),
     }
     comparison["common_test_window_start"] = common_start
 
@@ -488,12 +521,14 @@ if __name__ == "__main__":
         f"Ungrouped single model      : portfolio MAE={comparison['all_households_group']['mae_total']:.2f} "
         f"MSE={comparison['all_households_group']['mse_total']:.2f} kWh/15min  "
         f"MAPE={comparison['all_households_group']['mape']*100:.1f}%  "
+        f"RMSPE={comparison['all_households_group']['rmspe']*100:.1f}%  "
         f"(MAE/hh={comparison['all_households_group']['mae_per_household']:.4f})"
     )
     print(
         f"Grouped, portfolio-wide     : portfolio MAE={comparison['grouped_portfolio_wide']['mae_total']:.2f} "
         f"MSE={comparison['grouped_portfolio_wide']['mse_total']:.2f} kWh/15min  "
         f"MAPE={comparison['grouped_portfolio_wide']['mape']*100:.1f}%  "
+        f"RMSPE={comparison['grouped_portfolio_wide']['rmspe']*100:.1f}%  "
         f"(PV MAPE={comparison['pv_group']['mape']*100:.1f}%, non-PV MAPE={comparison['non_pv_group']['mape']*100:.1f}%)"
     )
     print(

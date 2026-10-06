@@ -252,16 +252,28 @@ Units for MAE/RMSE are **kWh per household per 15-min interval** (the model's
 native output -- see §3/above); MSE is the plain **L2/squared error**
 (kWh²/15min² -- the quantity the model's default regression objective
 actually minimizes; RMSE = sqrt(MSE) brings it back to interpretable units).
-"Rescaled to total" multiplies back by each row's actual historical
+RMSPE is **MSE's percentage-scale counterpart**, the same way MAPE is MAE's:
+mean of squared *relative* errors, square-rooted back to a percentage
+(`mean_squared_percentage_error` in `src/forecast.py`) -- scale-invariant the
+same way MAPE is, so (like MAPE) there's no separate "rescaled to total"
+version. "Rescaled to total" multiplies back by each row's actual historical
 `active_household_count` to give group-level kWh/15min, comparable across
 groups of different sizes and to the raw totals earlier versions of this
 pipeline reported directly.
 
-| Group | Households | Test period | MAE/household | MSE/household | RMSE/household | MAPE | MAE rescaled to total (kWh/15min) | MSE rescaled to total | Naive MAE/household (same 15-min-of-day, last week) |
-|---|---|---|---|---|---|---|---|---|---|
-| PV | 158 | 2023-09-05 → 2024-02-27 | 0.0544 | 0.0055 | 0.0739 | **21.6%** | 8.12 | 122.04 | 0.0843 |
-| No-PV | 252 | 2023-06-25 → 2024-02-27 | 0.0347 | 0.0025 | 0.0504 | **11.0%** | 8.18 | 140.67 | 0.0554 |
-| All-households (ungrouped) | 410 | 2023-05-30 → 2024-02-27 | 0.0328 | 0.0023 | 0.0483 | 11.9% | 12.60 | 345.68 | 0.0527 |
+| Group | Households | Test period | MAE/household | MSE/household | RMSE/household | MAPE | RMSPE | MAE rescaled to total (kWh/15min) | MSE rescaled to total | Naive MAE/household (same 15-min-of-day, last week) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| PV | 158 | 2023-09-05 → 2024-02-27 | 0.0544 | 0.0055 | 0.0739 | **21.6%** | 33.6% | 8.12 | 122.04 | 0.0843 |
+| No-PV | 252 | 2023-06-25 → 2024-02-27 | 0.0347 | 0.0025 | 0.0504 | **11.0%** | 14.5% | 8.18 | 140.67 | 0.0554 |
+| All-households (ungrouped) | 410 | 2023-05-30 → 2024-02-27 | 0.0328 | 0.0023 | 0.0483 | 11.9% | 15.8% | 12.60 | 345.68 | 0.0527 |
+
+RMSPE is notably higher than MAPE in every group (e.g. PV: 33.6% vs 21.6%) --
+expected, and consistent with the PV group's known near-zero-consumption
+midday troughs (§2): a handful of test rows where actual consumption is tiny
+get an outsized *relative* error even for a small absolute miss, and RMSPE
+(like RMSE vs MAE) penalizes those large relative errors disproportionately
+more than MAPE does. This is the same L1-vs-L2 relationship as MAE/RMSE,
+just on the percentage scale.
 
 Each row's MAPE here is scored on **that model's own full test period** --
 different for all three, since each group's test split starts wherever its
@@ -352,17 +364,24 @@ either library is better once properly tuned.
 | Group | Metric | LightGBM | CatBoost | Delta |
 |---|---|---|---|---|
 | PV | MAPE | 21.6% | 22.2% | +0.64pp |
+| PV | RMSPE | 33.6% | 34.9% | +1.37pp |
 | PV | MAE/household | 0.0544 | 0.0546 | +0.0003 |
 | PV | MSE/household | 0.005455 | 0.005440 | **-0.000015** |
 | PV | PICP (90% nominal) | 73.9% | **81.1%** | **+7.3pp** |
 | No-PV | MAPE | 11.0% | 11.3% | +0.34pp |
+| No-PV | RMSPE | 14.5% | 14.8% | +0.28pp |
 | No-PV | MAE/household | 0.0347 | 0.0354 | +0.0007 |
 | No-PV | MSE/household | 0.002542 | 0.002549 | +0.000006 |
 | No-PV | PICP (90% nominal) | 79.8% | **86.1%** | **+6.3pp** |
 | All-households | MAPE | 11.9% | 12.3% | +0.38pp |
+| All-households | RMSPE | 15.8% | 16.2% | +0.39pp |
 | All-households | MAE/household | 0.0328 | 0.0337 | +0.0009 |
 | All-households | MSE/household | 0.002335 | 0.002434 | +0.000098 |
 | All-households | PICP (90% nominal) | 85.0% | **89.7%** | **+4.7pp** |
+
+RMSPE agrees with MAPE in direction for all three groups (unlike MSE, which
+flipped for PV) -- LightGBM is consistently a little better on both
+percentage-scale metrics.
 
 **MAE and MSE even disagree with each other for the PV group.** CatBoost's
 MAE is worse there (0.0546 vs 0.0544), but its MSE is very slightly *better*
@@ -492,17 +511,19 @@ PV + no-PV as a single combined position would actually see.
 window described above -- not each model's own full test period from the
 Results table).
 
-| Approach | Test period | Portfolio MAE (kWh/15min) | MSE | RMSE | MAPE |
-|---|---|---|---|---|---|
-| Single ungrouped model (all 410 households) | 2023-09-05 → 2024-02-27 | 16.64 | 513.94 | 22.67 | 12.9% |
-| Grouped, **naive MAE sum** (wrong -- see above) | 2023-09-05 → 2024-02-27 | *18.25* | — | — | — |
-| Grouped, **portfolio-wide** (correct) | 2023-09-05 → 2024-02-27 | **16.45** | **509.26** | **22.57** | **12.6%** |
+| Approach | Test period | Portfolio MAE (kWh/15min) | MSE | RMSE | MAPE | RMSPE |
+|---|---|---|---|---|---|---|
+| Single ungrouped model (all 410 households) | 2023-09-05 → 2024-02-27 | 16.64 | 513.94 | 22.67 | 12.9% | 17.2% |
+| Grouped, **naive MAE sum** (wrong -- see above) | 2023-09-05 → 2024-02-27 | *18.25* | — | — | — | — |
+| Grouped, **portfolio-wide** (correct) | 2023-09-05 → 2024-02-27 | **16.45** | **509.26** | **22.57** | **12.6%** | **16.8%** |
 
 **With roughly 1-2 extra years of training history (§3), grouping now shows a
 real, consistent edge across every metric again.** The portfolio-wide
 approach beats the single ungrouped model on MAE (16.45 vs 16.64, ~1.1%
-lower), MSE (509.26 vs 513.94), RMSE (22.57 vs 22.67), and MAPE (12.6% vs
-12.9%) -- a modest but directionally unambiguous win, unlike the near-tie/mixed-signal result from
+lower), MSE (509.26 vs 513.94), RMSE (22.57 vs 22.67), MAPE (12.6% vs 12.9%),
+and RMSPE (16.8% vs 17.2%) -- a modest but directionally unambiguous win
+across every metric including L2's percentage-scale counterpart, unlike the
+near-tie/mixed-signal result from
 the shorter-training-window version of this pipeline. The naive sum is still
 clearly the wrong way to compare them regardless (18.25, well above both real
 numbers). A plausible explanation for why grouping's edge reappeared: more

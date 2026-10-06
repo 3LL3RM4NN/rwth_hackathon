@@ -38,6 +38,7 @@ from src.forecast import (
     build_supervised_table,
     chronological_split,
     load_group_15min,
+    mean_squared_percentage_error,
 )
 
 CATBOOST_PARAMS = dict(
@@ -76,6 +77,8 @@ def train_and_evaluate(name: str, n_households: int) -> dict:
     mse = mean_squared_error(test["y"], pred)
     rmse = mse ** 0.5
     mape = mean_absolute_percentage_error(test["y"], pred)
+    mspe = mean_squared_percentage_error(test["y"], pred)
+    rmspe = mspe ** 0.5
 
     count = test["active_household_count"]
     y_total = test["y"] * count
@@ -118,6 +121,8 @@ def train_and_evaluate(name: str, n_households: int) -> dict:
         "mse_per_household": float(mse),
         "rmse_per_household": float(rmse),
         "mape": float(mape),
+        "mspe": float(mspe),
+        "rmspe": float(rmspe),
         "mae_total": float(mae_total),
         "mse_total": float(mse_total),
         "rmse_total": float(rmse_total),
@@ -163,7 +168,7 @@ if __name__ == "__main__":
         print(
             f"MAE/household={res['mae_per_household']:.4f} kWh/15min  "
             f"MSE/household={res['mse_per_household']:.4f}  RMSE/household={res['rmse_per_household']:.4f}  "
-            f"MAPE={res['mape']*100:.1f}%"
+            f"MAPE={res['mape']*100:.1f}%  RMSPE={res['rmspe']*100:.1f}%"
         )
         print(f"MAE (rescaled to group total)={res['mae_total']:.2f} kWh/15min  "
               f"MSE (rescaled)={res['mse_total']:.2f}")
@@ -180,6 +185,7 @@ if __name__ == "__main__":
             print(f"{'metric':30s} {'LightGBM':>12s} {'CatBoost':>12s} {'delta':>10s}")
             for label, key, fmt in [
                 ("MAPE (%)", "mape", lambda v: v * 100),
+                ("RMSPE (%)", "rmspe", lambda v: v * 100),
                 ("MAE/household", "mae_per_household", lambda v: v),
                 ("MSE/household", "mse_per_household", lambda v: v),
                 ("RMSE/household", "rmse_per_household", lambda v: v),
