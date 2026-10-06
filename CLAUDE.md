@@ -66,13 +66,19 @@ python3 -m src.forecast       # LightGBM day-ahead model per group, 15-min steps
   meter-rollout/partial-coverage problem by trimming to a "stable window" (≥70% of the
   group's eventual households reporting).
 - `src/forecast.py` — LightGBM day-ahead model per group at 15-min steps (horizon = 96
-  steps = 24h); see its docstring for the no-leakage lag-feature design (only lags ≥96
-  steps/24h are safe across all 96 horizons) and the fully-vectorised feature
-  construction (no per-row Python loop). Weather inputs get the exact same no-leakage
-  treatment as the target itself (`<feat>_lag_24h`, `<feat>_rolling_mean_24_48`) — same-day
-  weather *actuals* are never used as a forecast stand-in (an earlier version of this
-  pipeline did that as a brief-sanctioned simplification; it's a real fix now, not just a
-  disclosed shortcut).
+  steps = 24h), matching the actual day-ahead market use case: every feature is anchored
+  to a fixed **gate-closure cutoff of 11:45 the day before delivery** (`CUTOFF_HOUR`/
+  `CUTOFF_MINUTE`), not to midnight of the delivery day — bids have to be submitted before
+  gate closure, so the last ~12h of the previous day isn't actually known at bid time
+  either (an earlier version of this pipeline assumed it was, via a midnight-anchored
+  origin). Target and weather lag/rolling features are looked up via `Series.reindex` at
+  fixed offsets *before this cutoff* (always safe by construction, for all 96 targets of a
+  day at once), not via a per-row constant-steps-before-*t* shift. See its docstring for
+  the full derivation (including why the same-time-of-day lookback needs k>=2 days now,
+  not k>=1) and the fully-vectorised feature construction (no per-row Python loop, no
+  per-day groupby either). Same-day weather *actuals* are never used as a forecast
+  stand-in (an earlier version of this pipeline did that as a brief-sanctioned
+  simplification; that's a real fix now, not just a disclosed shortcut).
 
 Full write-up of methodology, results, and known simplifications: `reports/level1_report.md`.
 ProLoaF (the brief's primary choice) was not installed/used — installing its setup code

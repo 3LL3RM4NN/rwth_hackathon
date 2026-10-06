@@ -148,96 +148,100 @@ above.
 
 ## 4. Day-ahead forecasting (`src/forecast.py`)
 
+**Matching the actual use case: bids are placed before gate closure, not at
+midnight.** A real day-ahead market bid for delivery day D has to be
+submitted by a fixed gate-closure time on day D-1 -- modelled here as
+**11:45 on D-1** (`CUTOFF_HOUR`/`CUTOFF_MINUTE`). An earlier version of this
+pipeline assumed "origin = midnight of D" -- i.e. that all of day D-1 was
+already known -- which isn't actually true at real bidding time: the last
+12h15m of D-1 (11:45 onward) wouldn't be known yet either. Every feature for
+every one of day D's 96 targets is now computed as of this single, fixed
+cutoff instead.
+
 **Target & resolution:** `kWh_received_Total` summed per group at its
-**native 15-minute resolution** (changed from an earlier hourly-aggregated
-version of this pipeline -- see §3 for why weather is upsampled instead of
-consumption downsampled). The forecast horizon is correspondingly 96 15-min
-steps (24h) instead of 24 hourly steps.
+**native 15-minute resolution**. The forecast horizon is 96 15-min steps
+(24h): one full day's worth of bids, submitted in a single batch as of the
+11:45-the-day-before cutoff.
 
-**Forecast definition:** a forecast is issued at `origin` = midnight UTC of
-day D+1, using only day-D-and-earlier data, predicting all 96 15-min values
-of day D+1 (horizon `h` = 0..95 steps since midnight).
+**Cutoff-anchored features, not origin-anchored ones.** For target `t` on
+delivery day D, `cutoff = D.normalize() - 12h15m` (D-1, 11:45). Two kinds of
+feature:
+- *Cutoff-anchored history* (target **and** weather): `lag_24h`/`lag_48h`/
+  `lag_168h` and `rolling_mean_24h_asof_cutoff` are looked up via
+  `Series.reindex` at fixed offsets *before the cutoff itself* -- so
+  `lag_24h` always means exactly "24h before the cutoff", identically for
+  all 96 targets of a day, rather than drifting in meaning depending on
+  which of the 96 is being predicted (which a constant-steps-before-*t*
+  shift would do). Weather gets the exact same treatment as the target series
+  -- same-day, and now even same-*morning*, weather actuals are never used,
+  only what was known by 11:45 the day before.
+- *Same-time-of-day history* (target only): `rolling_mean_same_timeofday_7d`
+  looks up `t` itself (not the cutoff) at `t - k*1day` for k=2..8, averaged.
+  This one is inherently tied to `t`'s own clock time, so it needs its own
+  safety margin: with the cutoff sitting 12h15m *before* midnight rather than
+  *at* it, `k=1` ("yesterday, same time") would still be in the future
+  relative to the cutoff for any target after 11:45 -- so the minimum safe
+  `k` moved from 1 to 2. A single, non-averaged `k=7` version (anchored to
+  `t`, safely clear of the cutoff by 7 days) is also kept for the naive
+  baseline below.
+- `lead_time_steps` (steps from cutoff to target, 49..144) is computed and
+  kept in the table for description, but *not* fed to the model: since the
+  cutoff time is a fixed constant, it's always exactly `horizon +
+  MARGIN_STEPS` -- a pure additive-constant transform of `horizon` that
+  carries zero extra information for a tree ensemble (confirmed empirically:
+  0 feature importance when it was included).
 
-**No-leakage lag design:** only lags ≥96 steps (24h) are used (`lag_24h`,
-`lag_48h`, `lag_168h`, plus a 24h rolling mean spanning `t-48h..t-24h` and a
-7-day same-15-min-of-day rolling mean). This isn't an arbitrary cutoff — for
-horizon `h>0`, target time `t = origin + h` steps, so any lag `L` (in steps)
-is guaranteed to land at or before `origin-1` (still known at forecast time)
-only when `L ≥ 96`; a naive "previous step" feature, for instance, would be
-safe for `h=0` but leak future same-day information for every `h>0`. This is
-the same argument as the earlier hourly version, just re-scaled from hours to
-15-min steps (96 steps = 24h instead of 24 hours = 24h).
+**No-leakage argument.** For any target `t` on day D and any of its 96
+possible positions, the cutoff is always fixed at D-1 11:45 regardless of
+which of the 96 targets `t` is -- so a feature looked up *at or before* that
+cutoff is safe *by construction*, for every target in the batch
+simultaneously. This is a cleaner argument than the earlier origin-anchored
+design's "a lag of >=96 steps relative to t happens to be safe for the
+worst-case horizon" reasoning, precisely because every feature is now
+anchored to the one real decision point instead of to each row's own target
+time.
 
-**Fully vectorised feature construction.** Since `origin` is always just
-`t.normalize()` (midnight of `t`'s own calendar day) and `horizon` is always
-just how far past that midnight `t` is, every lag/rolling feature is a plain
-`Series.shift`/`.rolling` over the whole continuous 15-min index, computed
-once -- no per-row Python loop. (The earlier hourly version used an explicit
-nested loop over origin-days × 24 hours; at 15-min resolution that same
-approach would have meant 4x the rows *and* a 4x-larger rolling window per
-row, so this was also a needed performance fix, not just a style preference:
-the full 3-group pipeline runs in ~7s now, down from ~28s at hourly despite
-processing 4x as many rows.)
-
-**Weather is no longer a leakage shortcut.** An earlier version of this
-pipeline used same-day weather **actuals** at the target timestamp as a
-stand-in for an unavailable day-ahead forecast, as the brief explicitly
-sanctions as a fallback -- but that's still same-day information the model
-wouldn't actually have at forecast time. Weather inputs now get the exact
-same treatment as the target series itself: `<feat>_lag_24h` ("yesterday,
-same time") and `<feat>_rolling_mean_24_48` ("yesterday's daily average"),
-both ≥24h/96 steps old and therefore always available at origin time for
-every horizon, by the same argument as the target's own lag features above.
-This is the same kind of persistence assumption an actual naive day-ahead
-weather forecast would make, not a shortcut around the leakage rule --
-and it still inherits §3's interpolation-to-15min simplification for the two
-cumulative columns. Accuracy drops as a direct, expected result (see Results
-below) since the model loses genuinely-predictive same-day information
-(especially sunshine duration for the PV group) it was never entitled to use;
-the numbers below are the honest ones.
+**Fully vectorised feature construction**, via `Series.reindex`/`.shift()`
+over the whole continuous 15-min index -- no per-row Python loop, and no
+per-day groupby either, despite cutoff-anchored features now being constant
+across each day's 96 rows.
 
 **Split:** chronological by whole origin-day, 80% train / 20% test (never
 split within a day).
 
 **Model:** single `LGBMRegressor` per group trained across all 96 horizons
 jointly (horizon is itself a feature), rather than 96 separate per-horizon
-models — simpler, and `hour`/`horizon` dominate feature importance anyway so
-the pooled model learns horizon-specific behaviour fine. A `minute` (0/15/30/45)
-calendar feature was added alongside `hour` since sub-hourly patterns can now
-actually be distinguished.
+models.
 
 ### Results
 
-Units are **kWh per 15-min interval**. These numbers supersede an earlier,
-more optimistic set that used same-day weather actuals as input (see above) --
-don't compare across the two without accounting for that.
+Units are **kWh per 15-min interval**. These numbers supersede both earlier
+sets (hourly, and 15-min with a midnight origin) -- the cutoff is stricter
+now, so accuracy is lower again, honestly.
 
 | Group | Households | Test period | MAE (kWh/15min) | RMSE | MAPE | MAE/household | Naive (same 15-min-of-day, last week) MAE |
 |---|---|---|---|---|---|---|---|
-| PV | 131 | 2023-12-01 → 2024-02-27 | 9.02 | 11.58 | **19.9%** | 0.0688 | 13.78 |
-| No-PV | 114 | 2023-10-13 → 2024-02-27 | 5.89 | 7.45 | **13.6%** | 0.0517 | 9.68 |
-| All-known (ungrouped) | 245 | 2023-11-27 → 2024-02-27 | 13.85 | 17.70 | 14.0% | 0.0565 | 23.49 |
+| PV | 131 | 2023-12-01 → 2024-02-27 | 9.44 | 12.24 | **22.4%** | 0.0721 | 13.78 |
+| No-PV | 114 | 2023-10-12 → 2024-02-27 | 6.39 | 8.13 | **14.5%** | 0.0561 | 9.68 |
+| All-known (ungrouped) | 245 | 2023-11-28 → 2024-02-27 | 15.03 | 19.42 | 15.3% | 0.0614 | 23.35 |
 
-Both grouped models still beat the naive "same 15-min-of-day, same weekday,
-last week" baseline, but by a smaller margin than before (~1.5–1.7x on MAE,
-down from ~1.7–2.4x) -- expected, since the naive baseline never had access
-to same-day weather either, so removing it from the LightGBM model closes
-part of that gap. The models are still learning real structure beyond pure
-calendar regularity, just less of an edge over the naive baseline than the
-leaky version suggested.
+The naive baseline is unchanged in value from the very first (hourly) version
+of this pipeline (13.78 / 9.68 / ~23.4) -- it was never affected by either the
+weather-leakage fix or the cutoff fix, since "same time of day, last week" was
+always anchored to the target itself and was always >=7 days old, comfortably
+clear of either cutoff. The *model*, on the other hand, keeps getting a little
+worse each time a remaining leakage/optimism source is removed (MAPE
+progression for the PV group: 16.1% → 19.9% → 22.4%), which is exactly the
+expected shape of "tightening the no-leakage constraint to match reality more
+closely costs accuracy, honestly." It still clearly beats the naive baseline
+in every case (~1.4-1.5x on MAE), so there's real learned structure left, just
+less of an edge than the leakier versions implied.
 
-Top features by gain, both groups, shifted substantially from the leaky
-version: the top 7 features for both groups are now all `*_rolling_mean_24_48`
-weather columns (`WindSpeed_hourly`, `Humidity_avg_hourly`,
-`Sunshine_duration_hourly`, ...), ranking above even the target's own
-`rolling_mean_24_48` and `lag_24h` -- the smoothed, day-old weather signal is
-more useful than any single noisier `_lag_24h` weather point. `hour` has
-fallen from a top-4 feature (leaky version) to near the bottom, and `minute`
-is essentially unused (full tables in `reports/forecast_metrics.json`). This
-makes sense: with same-day weather removed, "hour of day" alone carries much
-less information about PV-driven midday suppression than it used to, since
-that signal was previously coming through the (leaked) same-day sunshine
-value, not the clock time itself.
+Top features by gain, both groups: `horizon`, `rolling_mean_same_timeofday_7d`,
+and `hour` dominate -- the model leans heavily on "what does this specific
+quarter-hour of the day typically look like" now that weather is both
+leakage-free *and* possibly up to 36h stale by the time it's used (full
+tables in `reports/forecast_metrics.json`).
 
 ### Did grouping actually help?
 
@@ -249,30 +253,30 @@ windows. Re-scoring all three on the **same** common test window (from
 
 | Approach | MAE/household | MAPE |
 |---|---|---|
-| Single ungrouped model (all 245 households) | **0.0564** | 14.0% |
-| Grouped (PV model + no-PV model, summed) | 0.0619 | PV 19.9% / No-PV 13.2% |
+| Single ungrouped model (all 245 households) | **0.0620** | 15.4% |
+| Grouped (PV model + no-PV model, summed) | 0.0664 | PV 22.4% / No-PV 14.3% |
 
-**Honest finding, unchanged in direction from both earlier versions:** on raw
-per-household MAE, grouping is still a wash — slightly *worse* than a single
-pooled model (0.0619 vs 0.0564 kWh/15min/household). This is expected:
-summing 245 households into one series averages out more idiosyncratic noise
-than summing 131 or 114, so the pooled series is statistically "smoother" and
-easier to hit on absolute error alone.
+**Honest finding, unchanged in direction across all versions of this
+pipeline:** on raw per-household MAE, grouping is still a wash — slightly
+*worse* than a single pooled model (0.0664 vs 0.0620 kWh/15min/household).
+This is expected: summing 245 households into one series averages out more
+idiosyncratic noise than summing 131 or 114, so the pooled series is
+statistically "smoother" and easier to hit on absolute error alone.
 
 Where grouping clearly does pay off is **relative accuracy and risk
-characterisation**: the pooled model's 14.0% MAPE hides that the PV segment
-is forecast far less reliably (19.9% MAPE) than the no-PV segment (13.2%
+characterisation**: the pooled model's 15.4% MAPE hides that the PV segment
+is forecast far less reliably (22.4% MAPE) than the no-PV segment (14.3%
 MAPE). For day-ahead procurement, that gap matters more than the pooled
 headline number — it tells E.ON exactly where forecast risk concentrates
 (the PV-owning segment, driven by weather-dependent self-consumption) and
 where a wider safety margin / more conservative procurement buffer is
 warranted, which Level 3's uncertainty framing would act on directly. A
-single ungrouped model would never surface that. (This conclusion is
-unchanged across all three versions of this pipeline -- hourly with leaky
-weather, 15-min with leaky weather, and now 15-min with leakage-free weather
--- only the absolute error magnitudes shift; the PV-vs-no-PV gap in *relative*
-terms is a robust finding, not an artifact of any one resolution/weather
-choice.)
+single ungrouped model would never surface that. (This conclusion has now
+been robust across four successive, progressively-stricter versions of this
+pipeline -- hourly, 15-min with leaky weather, 15-min with leakage-free
+weather at a midnight origin, and now 15-min with a realistic pre-gate-closure
+cutoff. Only the absolute error magnitudes shift each time; the PV-vs-no-PV
+gap in *relative* terms is the robust finding.)
 
 ## 5. Summary of simplifications / honesty notes
 
@@ -280,13 +284,19 @@ choice.)
 - Forecasting groups use the *surveyed* PV flag, not the detector's labels;
   165 unsurveyed households are excluded from both forecasting groups
   entirely (not split into a third "unknown" group).
-- Weather inputs to the forecasting model (§4) are now lag/rolling features
-  (`_lag_24h`, `_rolling_mean_24_48`) only, with the same ≥24h/96-step
-  no-leakage cutoff as the target series — same-day weather actuals are
-  **not** used as a forecast stand-in. (An earlier version of this pipeline
-  did use same-day actuals, as the brief explicitly sanctions as a fallback;
-  that's no longer the case here, and accuracy dropped as a direct,
-  honestly-reported result of removing that leakage -- see §4.)
+- Weather inputs to the forecasting model (§4) are lag/rolling features
+  (`_lag_24h`, `_rolling_mean_24h_asof_cutoff`) only, anchored to the same
+  11:45-the-day-before cutoff as the target series — same-day weather
+  actuals are **not** used as a forecast stand-in. (An earlier version of
+  this pipeline did use same-day actuals, as the brief explicitly sanctions
+  as a fallback; that's no longer the case here, and accuracy dropped as a
+  direct, honestly-reported result of removing that leakage -- see §4.)
+- The forecast "origin" is a real day-ahead-market gate-closure time
+  (11:45 the day before delivery), not midnight of the delivery day — an
+  earlier version of this pipeline used midnight, which implicitly assumed
+  the full previous day was already known at bid time, which isn't true in
+  practice. All features are now anchored to this stricter cutoff instead
+  (§4); accuracy dropped again as a direct, honestly-reported consequence.
 - Weather is upsampled from hourly to 15-min via linear interpolation (§3);
   for the two cumulative columns (precipitation, sunshine duration) this
   treats an hourly total/duration as if it were a smoothly-varying

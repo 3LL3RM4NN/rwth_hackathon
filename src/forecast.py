@@ -1,36 +1,52 @@
 """Day-ahead, group-level forecasting model (LightGBM), built on the
 15-minute-resolution aggregates from ``src/aggregate.py``.
 
-Forecast setup
---------------
-A forecast is "issued" at ``origin`` = midnight UTC of day D+1, using only data
-from day D and earlier, to predict all 96 15-minute values of day D+1
-(``horizon`` h = 0..95 fifteen-minute steps since midnight, target timestamp
-``t = origin + h * 15min``).
+Matching the actual day-ahead market use case
+----------------------------------------------
+Day-ahead market bids have to be submitted by a fixed gate-closure time the
+day *before* delivery -- modelled here as ``CUTOFF_HOUR:CUTOFF_MINUTE``
+(11:45) on day D-1 for delivery day D. Every feature for every one of day D's
+96 15-minute targets is therefore computed as of that single, fixed cutoff
+timestamp, not as of midnight or as of the target time itself: nothing from
+after 11:45 on D-1 is ever used, including the rest of D-1 itself (11:45
+onward) and all of day D before it's forecast. This is stricter than an
+"origin = midnight" framing would be (that would implicitly assume all of day
+D-1 is already known, which isn't true at real bidding time).
 
-Only lag features with lag >= 24h (96 steps) are used, because for h > 0 a lag
-< 96 steps would reach into day D+1 itself (not yet known at the time the
-forecast is issued) -- e.g. a naive "previous step" feature is safe for h=0 but
-leaks future information for h=20. Anchoring every lag to t (not to origin) at
->=96 steps keeps every lag strictly inside day D or earlier for every horizon
--- the same argument as before, just re-scaled from hours to 15-min steps.
+For a target ``t`` on day D, ``cutoff = D.normalize() - CUTOFF_GAP`` (CUTOFF_GAP
+= 12h15m, i.e. the gap from 11:45 back to the next midnight). Two kinds of
+feature live on either side of this:
 
-Weather is held to the exact same no-leakage rule as the target series: there
-is no day-ahead weather *forecast* in this dataset, and same-day weather
-*actuals* at the target timestamp are not used as a stand-in for one (that
-would leak information not actually available at forecast time). Instead,
-each weather column gets the same lag_24h / rolling_mean_24_48 treatment as
-the target -- i.e. "yesterday, same time" and "yesterday's daily average" --
-which is the same kind of persistence assumption a naive day-ahead weather
-forecast would make, not a shortcut around the leakage rule.
-``aggregate.py``'s own linear-interpolation-to-15min simplification for that
-weather data is still inherited here.
+- **Cutoff-anchored history** (target + weather): ``lag_24h``/``lag_48h``/
+  ``lag_168h`` and ``rolling_mean_24h_asof_cutoff`` are looked up *at* fixed
+  offsets *before the cutoff itself* (via ``Series.reindex`` on timestamps
+  derived from each row's own cutoff) -- so they always mean exactly what
+  their name says ("24h before the cutoff"), identically for all 96 targets
+  of a given day, regardless of which of the 96 is being predicted.
+- **Same-time-of-day history** (target only): ``rolling_mean_same_timeofday_7d``
+  looks up ``t`` itself at fixed day-multiples in the past (``t - k*1day`` for
+  k=2..8). This one is inherently anchored to ``t``'s own clock time, not to
+  the cutoff, so it needs its own safety argument: it's safe only once
+  ``k*24h`` is large enough to land before the cutoff for every target in the
+  day, including the *last* one (23:45) -- which requires k>=2 (not k>=1, as
+  it would under the old midnight-cutoff framing), since the cutoff is now
+  12h15m *before* midnight rather than right at it. See the derivation in
+  ``build_supervised_table``.
 
-Feature construction below is fully vectorised (no per-row Python loop): since
-``origin`` is always just ``t.normalize()`` (midnight of t's own calendar day)
-and ``horizon`` is always just how far past that midnight t is, every lag/
-rolling feature is a plain ``Series.shift``/``rolling`` over the full
-continuous 15-min index, computed once for the whole series.
+``lead_time_steps`` (how many 15-min steps separate the cutoff from this
+specific target, 49..144) is computed and kept in the table for description/
+analysis, but *not* used as a model input: since ``CUTOFF_HOUR``/``MINUTE``
+are fixed constants, ``lead_time_steps`` is always exactly ``horizon +
+MARGIN_STEPS`` for every row -- a pure additive-constant transform of
+``horizon`` -- so it carries zero information a tree ensemble doesn't already
+get from ``horizon`` alone (confirmed empirically: 0 feature importance when
+included). It would only diverge from `horizon` if the cutoff varied (e.g. by
+weekday), which it doesn't here.
+
+Feature construction is fully vectorised (no per-row Python loop): cutoff
+timestamps are derived once from each row's own calendar day, then looked up
+via ``Series.reindex`` / ``Series.shift`` over the whole continuous 15-min
+index.
 """
 
 from __future__ import annotations
@@ -45,10 +61,28 @@ from src import aggregate
 
 STEPS_PER_HOUR = 4  # 15-min resolution
 STEPS_PER_DAY = 24 * STEPS_PER_HOUR  # 96
-LAG_HOURS = [24, 48, 168]  # yesterday / 2 days ago / same weekday last week
-LAG_STEPS = {f"lag_{h}h": h * STEPS_PER_HOUR for h in LAG_HOURS}
-ROLLING_WINDOW_STEPS = STEPS_PER_DAY  # 24h window, anchored to end at t-96 steps (see module docstring)
-SAME_TIMEOFDAY_LOOKBACK_DAYS = 7
+
+CUTOFF_HOUR = 11  # day-ahead bid gate closure: 11:45 on the day before delivery
+CUTOFF_MINUTE = 45
+CUTOFF_STEP_OF_DAY = CUTOFF_HOUR * STEPS_PER_HOUR + CUTOFF_MINUTE // 15  # 47
+# Gap from the cutoff back to the *next* midnight (12h15m) -- used to derive
+# each row's own cutoff timestamp from its calendar day via subtraction, in
+# minutes/pd.Timedelta(unit="m") throughout to avoid a generic-unit
+# DeprecationWarning that pd.Timedelta(hours=..., minutes=...) triggers on
+# this numpy/pandas version.
+CUTOFF_GAP = pd.Timedelta((24 * STEPS_PER_HOUR - CUTOFF_STEP_OF_DAY) * 15, unit="m")
+# How many 15-min steps separate the cutoff from midnight of the delivery day
+# -- i.e. every target's lead_time_steps = horizon + MARGIN_STEPS.
+MARGIN_STEPS = STEPS_PER_DAY - CUTOFF_STEP_OF_DAY  # 49
+
+LAG_HOURS_FROM_CUTOFF = [24, 48, 168]  # a day / 2 days / a week before the cutoff
+ROLLING_WINDOW_STEPS = STEPS_PER_DAY  # 24h trailing window for the "as of cutoff" rolling mean
+
+# Safety margin for the same-time-of-day lookback (k*1day before t): needs
+# k*96 - h >= MARGIN_STEPS for every horizon h up to 95 (the last of the day),
+# i.e. k >= (95 + MARGIN_STEPS) / 96 = 1.5 -> k >= 2.
+SAME_TIMEOFDAY_MIN_DAYS_BACK = 2
+SAME_TIMEOFDAY_LOOKBACK_DAYS = 7  # how many weekly terms to average (k = 2..8)
 
 WEATHER_FEATURES = [
     "Temperature_avg_hourly",
@@ -60,6 +94,10 @@ WEATHER_FEATURES = [
 ]
 TARGET = "kWh_total_group_sum"
 TRAIN_FRACTION = 0.8
+
+
+def _hours_before(timestamps: pd.DatetimeIndex, hours: int) -> pd.DatetimeIndex:
+    return timestamps - pd.Timedelta(hours * 60, unit="m")
 
 
 def load_group_15min(name: str) -> pd.DataFrame:
@@ -75,35 +113,61 @@ def build_supervised_table(df: pd.DataFrame) -> pd.DataFrame:
     table = pd.DataFrame(index=idx)
     table["y"] = s
 
-    for name, lag in LAG_STEPS.items():
-        table[name] = s.shift(lag)
+    # Every one of a day's 96 targets shares the same cutoff: 11:45 the day
+    # before. cutoff_time is a per-row Series here only because it's cheapest
+    # to compute that way (idx.normalize() is already vectorised); its actual
+    # *value* only depends on which calendar day the row's target falls on.
+    cutoff_time = idx.normalize() - CUTOFF_GAP
 
-    # Smoothed recent history: mean of the 24h window ending at t-96 steps
-    # (t-191..t-96), i.e. entirely within day D or earlier for every horizon.
-    table["rolling_mean_24_48"] = s.shift(ROLLING_WINDOW_STEPS).rolling(ROLLING_WINDOW_STEPS).mean()
+    # Cutoff-anchored history: looked up via reindex at a fixed offset before
+    # each row's own cutoff, so e.g. lag_24h always means "24h before the
+    # cutoff", identically for all 96 targets of that day (unlike shifting by
+    # a constant number of steps relative to t itself, which would make a
+    # fixed-name lag feature's actual recency drift across the day).
+    rolling_24h_mean = s.rolling(ROLLING_WINDOW_STEPS).mean()  # trailing 24h mean ending at each timestamp
+    for hours in LAG_HOURS_FROM_CUTOFF:
+        table[f"lag_{hours}h"] = s.reindex(_hours_before(cutoff_time, hours)).to_numpy()
+    table["rolling_mean_24h_asof_cutoff"] = rolling_24h_mean.reindex(cutoff_time).to_numpy()
 
-    # Mean of "this exact 15-min-of-day" across the past week (7 lags spaced
-    # one day apart) -- all are >=1 day old, so always safe regardless of h.
+    # Same-time-of-day history: mean of "this exact 15-min-of-day" across the
+    # past several days (k=2..8, not 1..7 -- see module docstring for why k=1
+    # (yesterday) is unsafe here: the cutoff sits 12h15m before midnight, so
+    # for late-day targets "yesterday, same time" would still be in the
+    # future relative to the cutoff).
     same_timeofday = pd.concat(
-        [s.shift(STEPS_PER_DAY * k) for k in range(1, SAME_TIMEOFDAY_LOOKBACK_DAYS + 1)], axis=1
+        [
+            s.shift(STEPS_PER_DAY * k)
+            for k in range(SAME_TIMEOFDAY_MIN_DAYS_BACK, SAME_TIMEOFDAY_MIN_DAYS_BACK + SAME_TIMEOFDAY_LOOKBACK_DAYS)
+        ],
+        axis=1,
     )
     table["rolling_mean_same_timeofday_7d"] = same_timeofday.mean(axis=1, skipna=True)
 
-    # Weather gets the same no-leakage lag/rolling treatment as the target --
-    # same-day actuals are never used (see module docstring).
+    # Baseline-only (not a model feature): "same 15-min-of-day, one week ago",
+    # anchored to t itself rather than to the cutoff. Exactly 7 days is safely
+    # >= the 2-day minimum above, so this is just as leakage-safe as the
+    # smoothed version -- it exists separately because a *cutoff*-anchored
+    # column (like lag_168h below) is constant across all 96 targets of a
+    # day, which makes it useless as a "naive forecast" (it wouldn't track
+    # the daily shape at all); this one does, by design.
+    table["naive_same_timeofday_last_week"] = s.shift(STEPS_PER_DAY * 7)
+
+    # Weather gets the same cutoff-anchored treatment as the target -- same-day
+    # (or even same-morning) actuals are never used (see module docstring).
     for feat in WEATHER_FEATURES:
         base = df[feat]
-        table[f"{feat}_lag_24h"] = base.shift(LAG_STEPS["lag_24h"])
-        table[f"{feat}_rolling_mean_24_48"] = (
-            base.shift(ROLLING_WINDOW_STEPS).rolling(ROLLING_WINDOW_STEPS).mean()
-        )
+        base_rolling_24h_mean = base.rolling(ROLLING_WINDOW_STEPS).mean()
+        table[f"{feat}_lag_24h"] = base.reindex(_hours_before(cutoff_time, 24)).to_numpy()
+        table[f"{feat}_rolling_mean_24h_asof_cutoff"] = base_rolling_24h_mean.reindex(cutoff_time).to_numpy()
 
     table["origin"] = idx.normalize()
     table["target_time"] = idx
-    # horizon = 15-min-of-day index (0..95); origin is always midnight of t's
-    # own day, so this is equivalent to (t - origin) / 15min without the
-    # Timedelta-division deprecation warning that triggers on this pandas version.
+    # horizon = 15-min-of-day index (0..95): which of the day's 96 targets this is.
     table["horizon"] = idx.hour * STEPS_PER_HOUR + idx.minute // 15
+    # lead_time_steps = steps from the cutoff to this target (49..144): how far
+    # ahead of the decision point this specific prediction actually is. No
+    # longer equivalent to `horizon` now that the cutoff isn't at midnight.
+    table["lead_time_steps"] = table["horizon"] + MARGIN_STEPS
     table["hour"] = idx.hour
     table["minute"] = idx.minute
     table["dow"] = idx.dayofweek
@@ -123,12 +187,12 @@ def chronological_split(table: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame
 
 
 WEATHER_FEATURE_COLUMNS = [f"{feat}_lag_24h" for feat in WEATHER_FEATURES] + [
-    f"{feat}_rolling_mean_24_48" for feat in WEATHER_FEATURES
+    f"{feat}_rolling_mean_24h_asof_cutoff" for feat in WEATHER_FEATURES
 ]
 
 FEATURE_COLUMNS = (
-    list(LAG_STEPS.keys())
-    + ["rolling_mean_24_48", "rolling_mean_same_timeofday_7d"]
+    [f"lag_{h}h" for h in LAG_HOURS_FROM_CUTOFF]
+    + ["rolling_mean_24h_asof_cutoff", "rolling_mean_same_timeofday_7d"]
     + WEATHER_FEATURE_COLUMNS
     + ["hour", "minute", "dow", "month", "is_weekend", "horizon"]
 )
@@ -169,9 +233,14 @@ def train_and_evaluate(name: str, n_households: int) -> dict:
     )
 
     # Naive day-ahead baseline for context: "same 15-min-of-day, same day of
-    # week, last week" (lag_168h), the single most defensible no-model
-    # forecast available at origin time.
-    naive_mae = mean_absolute_error(test["y"], test["lag_168h"])
+    # week, last week" (anchored to the target itself, not the cutoff -- see
+    # build_supervised_table), the single most defensible no-model forecast
+    # available at bid time. Unlike the model's own features, this single
+    # (non-averaged) lookup has no fallback for the rare row whose "exactly
+    # 7 days ago" point falls inside a data gap (e.g. the 2023-10-29 outage),
+    # so those few rows are excluded from this comparison specifically.
+    naive_valid = test.dropna(subset=["naive_same_timeofday_last_week"])
+    naive_mae = mean_absolute_error(naive_valid["y"], naive_valid["naive_same_timeofday_last_week"])
 
     result = {
         "name": name,
