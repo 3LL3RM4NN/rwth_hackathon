@@ -91,7 +91,12 @@ python3 -m src.feature_ablation  # optional: leave-one-feature-out impact on por
   fully-vectorised feature construction (no per-row Python loop, no per-day groupby
   either). Same-day weather *actuals* are never used as a forecast stand-in (an earlier
   version of this pipeline did that as a brief-sanctioned simplification; that's a real
-  fix now, not just a disclosed shortcut).
+  fix now, not just a disclosed shortcut). Also trains two `objective="quantile"` models
+  per group (`LOWER_QUANTILE`/`UPPER_QUANTILE` = 0.05/0.95) for a 90% prediction interval
+  (Level 3-style uncertainty), reporting PICP (realised coverage) and mean interval
+  width — found to be overconfident in practice (PICP 74-85% vs the 90% nominal target,
+  worse for the noisier PV group), reported honestly rather than tuned away; see the
+  report's "Uncertainty" subsection in §4.
 - `src/feature_ablation.py` — leave-one-feature-out check against the "Grouped,
   portfolio-wide" MAPE from `forecast.py`'s own grouped-vs-ungrouped comparison: retrains
   pv_group/non_pv_group with each of `FEATURE_COLUMNS` dropped in turn (same fixed

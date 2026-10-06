@@ -63,12 +63,30 @@ Feature construction is fully vectorised (no per-row Python loop): cutoff
 timestamps are derived once from each row's own calendar day, then looked up
 via ``Series.reindex`` / ``Series.shift`` over the whole continuous 15-min
 index.
+
+Uncertainty: quantile regression, not a probabilistic model
+-------------------------------------------------------------
+Alongside the point-forecast model, two extra ``LGBMRegressor`` models per
+group are trained with ``objective="quantile"`` at ``LOWER_QUANTILE``/
+``UPPER_QUANTILE`` (0.05/0.95, a 90% nominal prediction interval), same
+features and train/test rows throughout. This is the standard way to get
+interval estimates out of gradient boosting, but it's three independently
+fit models, not one joint distribution -- the three outputs aren't
+guaranteed consistent with each other (rare "quantile crossing", where the
+lower prediction ends up above the upper one for a given row, is detected
+and clamped, not silently ignored). Reported alongside the point metrics:
+PICP (realised coverage -- the fraction of actual test values that fall
+inside the predicted interval, which should land close to 90% if the
+intervals are well calibrated) and mean interval width (sharpness -- a
+trivially wide interval gets perfect coverage for free, so width has to be
+read together with PICP, not alone).
 """
 
 from __future__ import annotations
 
 import json
 
+import numpy as np
 import pandas as pd
 from lightgbm import LGBMRegressor
 from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error, mean_squared_error
@@ -110,6 +128,19 @@ WEATHER_FEATURES = [
 ]
 TARGET = "kWh_mean_per_active_household"
 TRAIN_FRACTION = 0.8
+
+LOWER_QUANTILE = 0.05
+UPPER_QUANTILE = 0.95
+NOMINAL_COVERAGE = UPPER_QUANTILE - LOWER_QUANTILE  # 0.90
+
+LGBM_PARAMS = dict(
+    n_estimators=400,
+    learning_rate=0.05,
+    num_leaves=31,
+    min_child_samples=20,
+    random_state=0,
+    verbosity=-1,
+)
 
 
 def _hours_before(timestamps: pd.DatetimeIndex, hours: int) -> pd.DatetimeIndex:
@@ -218,6 +249,12 @@ FEATURE_COLUMNS = (
 )
 
 
+def train_quantile_predict(train: pd.DataFrame, test: pd.DataFrame, alpha: float) -> np.ndarray:
+    model = LGBMRegressor(objective="quantile", alpha=alpha, **LGBM_PARAMS)
+    model.fit(train[FEATURE_COLUMNS], train["y"])
+    return model.predict(test[FEATURE_COLUMNS])
+
+
 def train_and_evaluate(name: str, n_households: int) -> dict:
     print(f"Loading reports/{name}_15min.csv...")
     df = load_group_15min(name)
@@ -229,17 +266,28 @@ def train_and_evaluate(name: str, n_households: int) -> dict:
     train, test = chronological_split(usable)
 
     print(f"Training LightGBM on {len(train)} rows (400 estimators)...")
-    model = LGBMRegressor(
-        n_estimators=400,
-        learning_rate=0.05,
-        num_leaves=31,
-        min_child_samples=20,
-        random_state=0,
-        verbosity=-1,
-    )
+    model = LGBMRegressor(**LGBM_PARAMS)
     model.fit(train[FEATURE_COLUMNS], train["y"])
     print(f"Evaluating on {len(test)} held-out rows...")
     pred = model.predict(test[FEATURE_COLUMNS])
+
+    print(
+        f"Training quantile models ({LOWER_QUANTILE:.0%}/{UPPER_QUANTILE:.0%}, "
+        f"{NOMINAL_COVERAGE:.0%} nominal interval)..."
+    )
+    pred_lower = train_quantile_predict(train, test, LOWER_QUANTILE)
+    pred_upper = train_quantile_predict(train, test, UPPER_QUANTILE)
+    # Independently-fit quantile models aren't guaranteed consistent with each
+    # other; clamp the rare row where it happens rather than silently ignoring it.
+    n_crossed = int((pred_lower > pred_upper).sum())
+    if n_crossed:
+        print(f"  {n_crossed} rows had quantile crossing (lower > upper); clamped.")
+        pred_lower, pred_upper = np.minimum(pred_lower, pred_upper), np.maximum(pred_lower, pred_upper)
+
+    picp = float(((test["y"] >= pred_lower) & (test["y"] <= pred_upper)).mean())
+    interval_width = pred_upper - pred_lower
+    mean_interval_width = float(interval_width.mean())
+    mean_interval_width_total = float((interval_width * test["active_household_count"]).mean())
 
     # mae/rmse/mape are on the kWh-per-household-per-15min scale, since that's
     # what the model actually predicts now (see module docstring). mae_total/
@@ -295,6 +343,11 @@ def train_and_evaluate(name: str, n_households: int) -> dict:
         "rmse_total": float(rmse_total),
         "naive_mae_per_household": float(naive_mae),
         "naive_mae_total": float(naive_mae_total),
+        "nominal_coverage": NOMINAL_COVERAGE,
+        "picp": picp,
+        "mean_interval_width_per_household": mean_interval_width,
+        "mean_interval_width_total": mean_interval_width_total,
+        "n_quantile_crossings": n_crossed,
         "mae_by_horizon": by_horizon.round(3).to_dict(),
         "feature_importance": pd.Series(
             model.feature_importances_, index=FEATURE_COLUMNS
@@ -303,6 +356,8 @@ def train_and_evaluate(name: str, n_households: int) -> dict:
 
     test_out = test[["origin", "horizon", "target_time", "y", "active_household_count"]].copy()
     test_out["pred"] = pred
+    test_out["pred_lower"] = pred_lower
+    test_out["pred_upper"] = pred_upper
     test_out.to_csv(f"reports/{name}_test_predictions.csv", index=False)
 
     return result
@@ -324,6 +379,11 @@ if __name__ == "__main__":
         )
         print(f"MAE (rescaled to group total)={res['mae_total']:.2f} kWh/15min")
         print(f"naive (same 15-min-of-day, last week) MAE/household={res['naive_mae_per_household']:.4f} kWh/15min")
+        print(
+            f"{res['nominal_coverage']*100:.0f}% prediction interval: PICP={res['picp']*100:.1f}%  "
+            f"mean width/household={res['mean_interval_width_per_household']:.4f} kWh/15min  "
+            f"({res['n_quantile_crossings']} quantile crossings)"
+        )
 
     with open("reports/forecast_metrics.json", "w") as f:
         json.dump(results, f, indent=2)

@@ -279,6 +279,49 @@ quarter-hour of the day typically look like" now that weather is both
 leakage-free *and* possibly up to 36h stale by the time it's used (full
 tables in `reports/forecast_metrics.json`).
 
+### Uncertainty: 90% prediction intervals
+
+Two extra `LGBMRegressor`s per group are trained with `objective="quantile"`
+at `LOWER_QUANTILE=0.05`/`UPPER_QUANTILE=0.95` (same features, same
+train/test rows as the point model), giving a nominal 90% prediction
+interval -- a first, direct answer to the "where is your model more/less
+certain" question Level 3 asks for, built on the same LightGBM pipeline
+rather than a different modelling approach. No quantile crossing (lower
+prediction ending up above the upper one for a given row) occurred in any
+group.
+
+| Group | PICP (realised coverage) | Mean interval width/household | Mean interval width, rescaled to total (kWh/15min) |
+|---|---|---|---|
+| PV | **73.9%** | 0.1556 | 23.24 |
+| No-PV | **79.8%** | 0.1105 | 26.04 |
+| All-households | **85.0%** | 0.1156 | 44.35 |
+
+**Honest finding: these intervals are overconfident.** Nominal coverage is
+90%; realised coverage (PICP) is 74-85%, meaning the actual value falls
+*outside* the predicted "90%" band 15-26% of the time -- substantially more
+often than it should. This isn't a bug (0 quantile crossings, and the
+pattern is monotonic and explicable -- see below); it's a genuine
+calibration gap in naively-trained quantile regression, which is itself a
+useful thing to have measured rather than assumed away: a point forecast
+with an uncalibrated "90% interval" stapled onto it is arguably worse than
+no interval at all for a procurement decision, since it invites
+over-confidence in exactly the situations (PV, most volatile) where caution
+matters most.
+
+The miscalibration tracks group volatility in a sensible direction: PICP is
+worst for the PV group (73.9%, also the group with the highest MAPE, 21.6%)
+and best for the all-households group (85.0%, also the lowest MAPE, 11.9%)
+-- the harder a group is to forecast at all, the more its naively-trained
+quantile models underestimate how wide the interval needs to be to actually
+hit 90%. A standard fix for this (not implemented here, out of scope for
+this pass) is **conformal calibration**: use a held-out calibration fold to
+measure the realised miscalibration and widen the interval post-hoc until it
+actually achieves the nominal rate, rather than trusting the raw quantile
+regression output. Reporting the gap honestly here, rather than silently
+widening the quantiles until PICP looked good, is the point -- that would
+just be fitting the evaluation metric instead of fixing the underlying
+model.
+
 ### Feature ablation: does "gain" importance match real impact?
 
 `src/feature_ablation.py` checks that directly: retrain pv_group and
