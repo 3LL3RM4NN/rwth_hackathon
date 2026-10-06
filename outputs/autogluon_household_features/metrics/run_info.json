@@ -1,0 +1,60 @@
+{
+  "autogluon_version": "1.6.3",
+  "config": {
+    "preset": "medium_quality",
+    "hyperparameters": {
+      "SeasonalNaive": {},
+      "RecursiveTabular": {
+        "model_name": "GBM",
+        "model_hyperparameters": {
+          "objective": "regression_l1"
+        }
+      },
+      "DirectTabular": {
+        "model_name": "GBM",
+        "model_hyperparameters": {
+          "objective": "regression_l1"
+        }
+      }
+    },
+    "time_limit": 1200,
+    "num_val_windows": 1,
+    "enable_ensemble": true,
+    "seed": 0,
+    "train_days": 365,
+    "min_train_valid_days": 14,
+    "context_days": 42,
+    "min_context_valid_days": 7,
+    "max_origins": null
+  },
+  "static_features": [
+    "region",
+    "pv_flag",
+    "has_survey",
+    "Survey_Building_Type",
+    "Survey_Building_LivingArea",
+    "Survey_Building_Residents",
+    "Survey_HeatPump_Installation_Type",
+    "Survey_HeatDistribution_System_FloorHeating",
+    "Survey_HeatDistribution_System_Radiator",
+    "Survey_DHW_Production_ByHeatPump",
+    "Survey_DHW_Production_ByElectricWaterHeater",
+    "Survey_DHW_Production_BySolar",
+    "Survey_Installation_HasDryer",
+    "Survey_Installation_HasFreezer",
+    "Survey_Installation_HasElectricVehicle"
+  ],
+  "fit_seconds": 252.6,
+  "predict_seconds": 1877.1,
+  "series_in_training": 389,
+  "models_trained": [
+    "WeightedEnsemble",
+    "DirectTabular",
+    "RecursiveTabular",
+    "SeasonalNaive"
+  ],
+  "best_model": "WeightedEnsemble",
+  "households_improved": 230,
+  "households_worsened": 174,
+  "households_compared": 404
+}

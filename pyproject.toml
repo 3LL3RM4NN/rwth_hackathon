@@ -8,16 +8,19 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "pandas (>=2.3.3,<3.0.0)",
-    "matplotlib (>=3.10.8,<4.0.0)",
-    "polars (>=1.36.1,<2.0.0)",
-    "numpy (>=2.4.0,<3.0.0)",
-    "scikit-learn (>=1.8.0,<2.0.0)",
-    "jupyterlab (>=4.5.1,<5.0.0)",
-    "seaborn (>=0.13.2,<0.14.0)"
+    "pandas>=2.3.3,<3.0.0",
+    "matplotlib>=3.10.8,<4.0.0",
+    "polars>=1.36.1,<2.0.0",
+    "numpy>=2.4.0,<3.0.0",
+    "scikit-learn>=1.8.0,<2.0.0",
+    "jupyterlab>=4.5.1,<5.0.0",
+    "seaborn>=0.13.2,<0.14.0",
+    "pyarrow>=19.0.0",
+    "autogluon-timeseries>=1.6.3",
+    "holidays>=0.106",
+    "lightgbm>=4.7.0",
 ]
 
-
-[build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+[tool.uv]
+# scripts/ + src/ are run in place, not built as an installable package
+package = false

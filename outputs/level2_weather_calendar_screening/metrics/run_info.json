@@ -1,0 +1,29 @@
+{
+  "both": {
+    "label": "D",
+    "covariates": [
+      "is_weekend",
+      "is_holiday",
+      "month",
+      "temp_latest",
+      "temp_lag1h",
+      "temp_lag6h",
+      "temp_lag24h",
+      "temp_lag7d",
+      "temp_mean6h",
+      "temp_mean24h",
+      "temp_chg6h",
+      "temp_chg24h"
+    ],
+    "fit_seconds": 286.1,
+    "predict_seconds": 426.6,
+    "models_trained": [
+      "WeightedEnsemble",
+      "DirectTabular",
+      "RecursiveTabular",
+      "SeasonalNaive"
+    ],
+    "best_model": "WeightedEnsemble",
+    "series_in_training": 227
+  }
+}

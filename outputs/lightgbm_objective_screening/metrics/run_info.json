@@ -1,0 +1,45 @@
+{
+  "lgbm_l1": {
+    "objective": {
+      "objective": "l1"
+    },
+    "validation_metric": "l1",
+    "fit_seconds": 11.4,
+    "best_iteration": 497,
+    "n_estimators_cap": 500,
+    "val_loss": 0.23014217958748068,
+    "max_abs_diff_vs_previous_lgbm_screening": 0.0
+  },
+  "lgbm_l2": {
+    "objective": {
+      "objective": "regression"
+    },
+    "validation_metric": "l2",
+    "fit_seconds": 6.7,
+    "best_iteration": 500,
+    "n_estimators_cap": 500,
+    "val_loss": 0.12184976188645594
+  },
+  "lgbm_q60": {
+    "objective": {
+      "objective": "quantile",
+      "alpha": 0.6
+    },
+    "validation_metric": "quantile",
+    "fit_seconds": 12.1,
+    "best_iteration": 500,
+    "n_estimators_cap": 500,
+    "val_loss": 0.11827654080243684
+  },
+  "lgbm_q75": {
+    "objective": {
+      "objective": "quantile",
+      "alpha": 0.75
+    },
+    "validation_metric": "quantile",
+    "fit_seconds": 11.1,
+    "best_iteration": 500,
+    "n_estimators_cap": 500,
+    "val_loss": 0.10524425356338757
+  }
+}

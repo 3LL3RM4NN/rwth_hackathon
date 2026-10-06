@@ -1,0 +1,45 @@
+{
+  "households": 410,
+  "date_range": [
+    "2019-05-20",
+    "2024-02-27"
+  ],
+  "observations_non_missing": 27663072,
+  "expected_intervals": 29724288,
+  "missing_intervals": 2061216,
+  "complete_days": 288157,
+  "incomplete_days": 21471,
+  "duplicate_timestamps": 0,
+  "off_grid_timestamps": 0,
+  "negative_values": 0,
+  "split": {
+    "train": [
+      "2019-05-20",
+      "2022-09-22"
+    ],
+    "val": [
+      "2022-09-23",
+      "2023-03-15"
+    ],
+    "test": [
+      "2023-03-16",
+      "2024-02-27"
+    ]
+  },
+  "config": {
+    "data_dir": "/Users/johannesjeup/Code/Pycharm/rwth_hackathon/data/15min",
+    "output_dir": "/Users/johannesjeup/Code/Pycharm/rwth_hackathon/outputs",
+    "target": "kWh_received_Total",
+    "intervals_per_day": "96",
+    "test_fraction": "0.2",
+    "val_fraction": "0.1",
+    "min_history_days": "1",
+    "min_day_completeness": "1.0",
+    "models": "('naive_1day', 'naive_7day', 'seasonal_mean_4weeks')",
+    "mean_weeks": "4",
+    "mean_min_occurrences": "2",
+    "mape_min_actual": "0.05",
+    "max_households": "None"
+  },
+  "households_in_test": 404
+}

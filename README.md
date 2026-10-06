@@ -23,6 +23,17 @@ As you can imagine, having long term contracts, e.g. with a long term procuremen
 For this challenge, we will focus on the day-ahead procurement stage.
 The goal for E.ON is to have a good forecast of the energy consumption and production for the next day, which can be used to procure the right amount of energy on the day-ahead market.
 
+# Setup (uv)
+The project uses [uv](https://docs.astral.sh/uv/); `pyproject.toml` and `uv.lock` define the environment (Python 3.12, see `.python-version`).
+
+```bash
+uv sync                                          # create .venv and install locked dependencies
+uv run python scripts/run_baseline.py            # seasonal-naive baselines -> outputs/
+uv run python scripts/validate_baseline.py       # checks saved predictions against the raw CSVs
+```
+
+Add dependencies with `uv add <package>`. Predictions are written to `outputs/predictions/` (git-ignored).
+
 # Data Sheet
 ## Household Data
 The dataset comprises consumption data from **410 households**, who own a heat-pump and in some cases also a photovoltaic system (PV system).

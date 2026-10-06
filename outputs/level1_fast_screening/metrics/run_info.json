@@ -1,0 +1,36 @@
+{
+  "selected": {
+    "spring": [
+      "2023-03-27",
+      "2023-04-24",
+      "2023-05-15"
+    ],
+    "summer": [
+      "2023-06-19",
+      "2023-07-17",
+      "2023-08-14"
+    ],
+    "autumn": [
+      "2023-09-11",
+      "2023-10-09",
+      "2023-11-13"
+    ],
+    "winter": [
+      "2023-12-18",
+      "2024-01-15",
+      "2024-02-12"
+    ]
+  },
+  "fit_seconds_pooled": 225.8,
+  "predict_seconds_pooled": 296.8,
+  "pooled_models_trained": [
+    "WeightedEnsemble",
+    "DirectTabular",
+    "RecursiveTabular",
+    "SeasonalNaive"
+  ],
+  "pooled_best_model": "WeightedEnsemble",
+  "pooled_series_in_training": 227,
+  "households_scored": 241,
+  "forecast_days": 84
+}

@@ -1,0 +1,41 @@
+{
+  "source": "/Users/johannesjeup/Code/Pycharm/rwth_hackathon/outputs/level1_fast_screening",
+  "models": [
+    "autogluon_pooled",
+    "seasonal_mean_4weeks"
+  ],
+  "households": 241,
+  "forecast_days": 84,
+  "selected_weeks": {
+    "spring": [
+      "2023-03-27",
+      "2023-04-24",
+      "2023-05-15"
+    ],
+    "summer": [
+      "2023-06-19",
+      "2023-07-17",
+      "2023-08-14"
+    ],
+    "autumn": [
+      "2023-09-11",
+      "2023-10-09",
+      "2023-11-13"
+    ],
+    "winter": [
+      "2023-12-18",
+      "2024-01-15",
+      "2024-02-12"
+    ]
+  },
+  "error_definition": "forecast - actual",
+  "mape_min_actual_kWh": 0.05,
+  "cost_ratios_under_to_over": [
+    1.0,
+    1.5,
+    2.0,
+    3.0
+  ],
+  "common_intervals": 1783680,
+  "no_models_trained": true
+}

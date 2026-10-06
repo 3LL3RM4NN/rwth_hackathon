@@ -1,0 +1,25 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+.idea/
+.claude/
+.mcp.json
+
+# generated experiment artifacts (reproducible with scripts/)
+outputs/predictions/
+outputs/**/model*/
+outputs/**/models/
+outputs/**/predictions/
+outputs/*.log
+outputs/**/*.log
+*.pkl
+*.parquet
+outputs/**/lgbm_*model.txt
+outputs/**/per_date.csv
+outputs/**/per_household.csv
+outputs/**/per_quarter_hour.csv
+outputs/**/per_qh.csv
+outputs/level2_procurement/household_daily_metrics.csv
+outputs/**/static_features_used.csv
+outputs/**/pv_audit_households.csv

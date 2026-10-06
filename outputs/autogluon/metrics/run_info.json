@@ -1,0 +1,40 @@
+{
+  "autogluon_version": "1.6.3",
+  "config": {
+    "preset": "medium_quality",
+    "hyperparameters": {
+      "SeasonalNaive": {},
+      "RecursiveTabular": {
+        "model_name": "GBM",
+        "model_hyperparameters": {
+          "objective": "regression_l1"
+        }
+      },
+      "DirectTabular": {
+        "model_name": "GBM",
+        "model_hyperparameters": {
+          "objective": "regression_l1"
+        }
+      }
+    },
+    "time_limit": 1200,
+    "num_val_windows": 1,
+    "enable_ensemble": true,
+    "seed": 0,
+    "train_days": 365,
+    "min_train_valid_days": 14,
+    "context_days": 42,
+    "min_context_valid_days": 7,
+    "max_origins": null
+  },
+  "fit_seconds": 231.1,
+  "predict_seconds": 1439.4,
+  "series_in_training": 389,
+  "models_trained": [
+    "WeightedEnsemble",
+    "DirectTabular",
+    "RecursiveTabular",
+    "SeasonalNaive"
+  ],
+  "best_model": "WeightedEnsemble"
+}

@@ -1,0 +1,155 @@
+{
+  "matrix_identity": {
+    "Xfit": true,
+    "yfit": true,
+    "Xval": true,
+    "yval": true,
+    "test_households": true,
+    "Xtest": true
+  },
+  "data": {
+    "training_rows": 1266767,
+    "validation_rows": 549504,
+    "n_features": 32,
+    "features": [
+      "household",
+      "slot",
+      "hour",
+      "quarter",
+      "dow",
+      "is_weekend",
+      "month",
+      "is_holiday",
+      "slot_sin",
+      "slot_cos",
+      "dow_sin",
+      "dow_cos",
+      "lag_1d",
+      "lag_2d",
+      "lag_7d",
+      "mean_same_slot_4wk",
+      "y_last",
+      "y_lag1h",
+      "roll_mean_1h",
+      "roll_mean_6h",
+      "roll_mean_24h",
+      "roll_mean_7d",
+      "roll_std_24h",
+      "temp_latest",
+      "temp_lag1h",
+      "temp_lag6h",
+      "temp_lag24h",
+      "temp_lag7d",
+      "temp_mean6h",
+      "temp_mean24h",
+      "temp_chg6h",
+      "temp_chg24h"
+    ],
+    "training_households": 245,
+    "scored_households": 241,
+    "forecast_days": 84,
+    "seed": 0,
+    "train_target_days": [
+      "2022-03-16",
+      "2023-02-15"
+    ],
+    "validation_target_days": [
+      "2023-02-16",
+      "2023-03-15"
+    ]
+  },
+  "independent_feature_recompute": {
+    "checked_feature_rows": 72,
+    "max_abs_diff": 8.900960288826809e-07,
+    "features_checked": [
+      "y_last",
+      "y_lag1h",
+      "lag_1d",
+      "lag_2d",
+      "lag_7d",
+      "mean_same_slot_4wk",
+      "roll_mean_1h/6h/24h/7d",
+      "roll_std_24h",
+      "temp_latest",
+      "temp_lag24h",
+      "temp_lag7d",
+      "temp_mean24h",
+      "temp_chg6h"
+    ]
+  },
+  "models": {
+    "L1": {
+      "objective": "l1",
+      "best_iteration": 497,
+      "n_estimators_cap": 500,
+      "val_loss": 0.23014217958748068,
+      "fit_seconds": 11.3
+    },
+    "L2": {
+      "objective": "regression",
+      "best_iteration": 500,
+      "n_estimators_cap": 500,
+      "val_loss": 0.12184976188645594,
+      "fit_seconds": 6.6
+    }
+  },
+  "leakage": {
+    "L1": {
+      "household_days_checked": 24,
+      "modes": [
+        "all targets+weather after D-1 11:45 -> 9999",
+        "only target day D -> 9999"
+      ],
+      "result": "features and predictions unchanged"
+    },
+    "L2": {
+      "household_days_checked": 24,
+      "modes": [
+        "all targets+weather after D-1 11:45 -> 9999",
+        "only target day D -> 9999"
+      ],
+      "result": "features and predictions unchanged"
+    }
+  },
+  "evaluation_set": {
+    "scored_intervals": 1795968,
+    "household_days": 18708,
+    "households": 241
+  },
+  "existing_common_set": {
+    "intervals": 1783680,
+    "household_days": 18580,
+    "extra_intervals_in_full_set": 12288,
+    "extra_household_days": 128,
+    "reason": "household-days without a seasonal_mean_4weeks forecast (<2 same-weekday days in the last 4 weeks) or without stored AutoGluon forecast"
+  },
+  "prediction_comparison": {
+    "L1": {
+      "verified_rows": 1795968,
+      "existing_rows": 1795968,
+      "rows_only_in_verified": 0,
+      "rows_only_in_existing": 0,
+      "compared": 1795968,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "n_differing_exact": 0,
+      "n_differing_gt_1e-6": 0,
+      "actual_max_abs_diff_raw_csv_vs_pipeline": 0.0
+    },
+    "L2": {
+      "verified_rows": 1795968,
+      "existing_rows": 1795968,
+      "rows_only_in_verified": 0,
+      "rows_only_in_existing": 0,
+      "compared": 1795968,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "n_differing_exact": 0,
+      "n_differing_gt_1e-6": 0,
+      "actual_max_abs_diff_raw_csv_vs_pipeline": 0.0
+    }
+  },
+  "verdict": "VERIFIED",
+  "pred_identical": true,
+  "metrics_match": true
+}

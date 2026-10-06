@@ -1,0 +1,14 @@
+{
+  "lgbm": {
+    "fit_seconds": 12.1,
+    "predict_seconds": 5.6,
+    "best_iteration": 497,
+    "val_MAE": 0.23014217958748068
+  },
+  "lgbm_pv": {
+    "fit_seconds": 11.6,
+    "predict_seconds": 6.6,
+    "best_iteration": 500,
+    "val_MAE": 0.23002845873253588
+  }
+}

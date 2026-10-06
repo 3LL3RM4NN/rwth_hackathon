@@ -1,0 +1,7 @@
+reference,group,households,improved,worsened,pct_improved,mean_rel_change_%
+seasonal_mean_4weeks,combined,241,239,2,99.2,-14.8
+seasonal_mean_4weeks,pv,131,129,2,98.5,-15.37
+seasonal_mean_4weeks,non_pv,110,110,0,100.0,-14.11
+autogluon_pooled_2345_cutoff,combined,241,150,91,62.2,-0.26
+autogluon_pooled_2345_cutoff,pv,131,58,73,44.3,0.95
+autogluon_pooled_2345_cutoff,non_pv,110,92,18,83.6,-1.69

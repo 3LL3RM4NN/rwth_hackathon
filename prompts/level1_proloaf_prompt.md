@@ -54,8 +54,8 @@ Use **ProLoaF** (https://github.com/sogno-platform/proloaf), the Fraunhofer/Sogn
 load-forecasting library, as the forecasting engine for both group models. Its workflow:
 
 1. Install it (e.g. `pip install "proloaf @ git+https://github.com/sogno-platform/proloaf.git"` or
-   clone as a submodule) and add it as a dependency in `pyproject.toml` (this project uses
-   Poetry).
+   clone as a submodule) and add it as a dependency with `uv add` (this project uses
+   uv; `pyproject.toml` is the source of truth).
 2. ProLoaF is driven by per-"station" folders under `targets/<name>/` containing
    `preprocessing.json` and `config.json`. Create one such folder per group, e.g.
    `targets/pv_group/` and `targets/non_pv_group/`.

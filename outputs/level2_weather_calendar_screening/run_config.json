@@ -1,0 +1,48 @@
+{
+  "preset": "medium_quality",
+  "hyperparameters": {
+    "SeasonalNaive": {},
+    "RecursiveTabular": {
+      "model_name": "GBM",
+      "model_hyperparameters": {
+        "objective": "regression_l1"
+      }
+    },
+    "DirectTabular": {
+      "model_name": "GBM",
+      "model_hyperparameters": {
+        "objective": "regression_l1"
+      }
+    }
+  },
+  "time_limit": 1200,
+  "num_val_windows": 1,
+  "enable_ensemble": true,
+  "seed": 0,
+  "train_days": 365,
+  "min_train_valid_days": 14,
+  "context_days": 42,
+  "min_context_valid_days": 7,
+  "max_origins": null,
+  "prediction_length": 144,
+  "variants": [
+    "both"
+  ],
+  "temperature_features": [
+    "temp_latest",
+    "temp_lag1h",
+    "temp_lag6h",
+    "temp_lag24h",
+    "temp_lag7d",
+    "temp_mean6h",
+    "temp_mean24h",
+    "temp_chg6h",
+    "temp_chg24h"
+  ],
+  "calendar_features": [
+    "is_weekend",
+    "is_holiday",
+    "month"
+  ],
+  "weather_anchor": "D-1 11:00"
+}

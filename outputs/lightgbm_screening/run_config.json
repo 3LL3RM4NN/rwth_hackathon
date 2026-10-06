@@ -1,0 +1,62 @@
+{
+  "lightgbm": {
+    "objective": "l1",
+    "n_estimators": 500,
+    "learning_rate": 0.05,
+    "num_leaves": 31,
+    "subsample": 0.8,
+    "subsample_freq": 1,
+    "colsample_bytree": 0.8,
+    "random_state": 0,
+    "verbose": -1
+  },
+  "lightgbm_version": "4.7.0",
+  "sample_frac": 0.25,
+  "early_stopping_rounds": 50,
+  "train_target_days": [
+    "2022-03-16",
+    "2023-02-15"
+  ],
+  "validation_target_days": [
+    "2023-02-16",
+    "2023-03-15"
+  ],
+  "test_days": 84,
+  "scored_households": 241,
+  "training_households": 245,
+  "features": [
+    "household",
+    "slot",
+    "hour",
+    "quarter",
+    "dow",
+    "is_weekend",
+    "month",
+    "is_holiday",
+    "slot_sin",
+    "slot_cos",
+    "dow_sin",
+    "dow_cos",
+    "lag_1d",
+    "lag_2d",
+    "lag_7d",
+    "mean_same_slot_4wk",
+    "y_last",
+    "y_lag1h",
+    "roll_mean_1h",
+    "roll_mean_6h",
+    "roll_mean_24h",
+    "roll_mean_7d",
+    "roll_std_24h",
+    "temp_latest",
+    "temp_lag1h",
+    "temp_lag6h",
+    "temp_lag24h",
+    "temp_lag7d",
+    "temp_mean6h",
+    "temp_mean24h",
+    "temp_chg6h",
+    "temp_chg24h"
+  ],
+  "strategy": "direct: one global model, rows = household x target day x slot, all features anchored at D-1 11:45"
+}

@@ -1,0 +1,4 @@
+model,test_days_with_actual,predicted_days,no_prediction_days,households_without_prediction
+naive_1day,132833,132171,662,6
+naive_7day,132833,131641,1192,6
+seasonal_mean_4weeks,132833,131992,841,6
