@@ -56,5 +56,3 @@ Details are in `results/*.csv`; the figures are `results/portfolio_weeks.png` an
 - `utils/features.py`: features, with checks that no feature uses data after the cutoff.
 - `utils/evaluate.py`: metrics, portfolio, buying regret, quantile bids, bootstrap.
 - `scripts/run_pipeline.py`: end-to-end runner.
-- `eon_forecasting_literature_review.md`: literature review.
-- `REVIEW_HANDOFF.md`: methodology and code review log (Claude implemented, Codex reviewed).
