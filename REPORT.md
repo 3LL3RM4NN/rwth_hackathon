@@ -88,8 +88,8 @@ per-household series:
    (effectively household-level); the portfolio model instead predicts **only the total
    portfolio load** directly.
 2. **Training objective** — rather than learning and aggregating household-level
-   errors, it directly minimizes $\min_\theta \sum_{d,h}(Y_{d,h}-\hat Y_{d,h})^2$ on the
-   portfolio series itself.
+   errors, it directly minimizes the squared error of the portfolio total itself,
+   Σ(d,h) (Y[d,h] − Ŷ[d,h])², over θ.
 3. **Trade-off** — household-level modeling (this branch's approach) keeps individual
    forecasts and flexibility (e.g. the PV-vs-No-PV risk breakdown above); direct
    portfolio modeling drops that granularity in exchange for optimizing exactly the
