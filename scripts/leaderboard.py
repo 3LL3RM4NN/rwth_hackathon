@@ -2,6 +2,7 @@
 
 Cohort: the fixed 255-household portfolio. Test: 2023-03-01..2024-02-27, hourly kWh.
 Missing forecasts are filled with the Blend baseline and the fallback rate is reported.
+Only strict-weather (W0) and consumption-only models are scored.
 
 Usage: .venv/bin/python -m scripts.leaderboard
 """
@@ -21,7 +22,8 @@ def main() -> None:
     members = cohort(df)
     frame = df.filter(pl.col("D") >= CALIB[0], pl.col("Household_ID").is_in(members)).select("Household_ID", "hour", "D", "lhour", "kwh")
 
-    preds = load_all_preds()
+    # Strict weather and consumption-only models only (actual-weather "oracle" runs are excluded)
+    preds = {k: v for k, v in load_all_preds().items() if v[1]["track"] != "W2_oracle"}
     models = list(preds)
     for name, (p, _) in preds.items():
         frame = frame.join(p.select("Household_ID", "hour", pl.col("pred").alias(name)), on=["Household_ID", "hour"], how="left")

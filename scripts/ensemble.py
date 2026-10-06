@@ -1,6 +1,6 @@
 """Equal-weight ensemble of the 3 best models, selected on the tune block (never the test year).
 
-Operational ensemble: chosen among target-only and W0 models. Oracle ensemble: among W2_oracle models.
+Chosen among strict-weather (W0) and consumption-only models.
 TimesFM-3 is excluded (non-commercial weights). Missing member forecasts fall back to Blend.
 
 Usage: .venv/bin/python -m scripts.ensemble   (then rerun scripts.leaderboard)
@@ -11,7 +11,7 @@ from utils.evaluate import point_metrics, portfolio
 from utils.features import build_features
 from utils.splits import FIT_END, TUNE, cohort, load_all_preds, save_preds
 
-POOLS = {"Ensemble_W0": ("target-only", "W0"), "Ensemble_W2_oracle": ("W2_oracle",)}
+POOLS = {"Ensemble_W0": ("target-only", "W0")}
 EXCLUDE = ("TimesFM3", "Ensemble")
 
 
