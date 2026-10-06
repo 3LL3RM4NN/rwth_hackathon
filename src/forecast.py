@@ -294,11 +294,13 @@ if __name__ == "__main__":
     print("\nRe-scoring all groups on the common held-out test window...")
     common_start = max(r["test_origin_range"][0] for r in results.values())
     comparison = {}
+    preds_by_name = {}
     for name, res in results.items():
         preds = pd.read_csv(
             f"reports/{name}_test_predictions.csv", parse_dates=["origin", "target_time"]
         )
         preds = preds[preds["origin"] >= common_start]
+        preds_by_name[name] = preds
         mae = mean_absolute_error(preds["y"], preds["pred"])
         rmse = mean_squared_error(preds["y"], preds["pred"]) ** 0.5
         mape = mean_absolute_percentage_error(preds["y"], preds["pred"])
@@ -311,23 +313,62 @@ if __name__ == "__main__":
             "mae_per_household": float(mae / res["n_households"]),
         }
 
+    # Naive sum of each group's own MAE -- kept for contrast, but this
+    # *overstates* the real combined-bid error: it implicitly assumes the PV
+    # and non-PV groups' forecast errors are perfectly correlated (always
+    # wrong in the same direction by the same amount), when in reality
+    # independent errors partially cancel once you actually add the two
+    # groups' bids together. See "portfolio-wide" below for the real number.
     grouped_mae_sum = comparison["pv_group"]["mae"] + comparison["non_pv_group"]["mae"]
     grouped_hh_sum = comparison["pv_group"]["n_households"] + comparison["non_pv_group"]["n_households"]
-    comparison["grouped_combined"] = {
+    comparison["grouped_naive_mae_sum"] = {
         "n_households": grouped_hh_sum,
         "mae": grouped_mae_sum,
         "mae_per_household": grouped_mae_sum / grouped_hh_sum,
+    }
+
+    # Portfolio-wide error: what the day-ahead desk actually cares about if
+    # PV and non-PV are bid as one combined position -- sum the *predictions*
+    # and the *actuals* across both groups first (per 15-min step), then score
+    # the combined series. This is the real error the "grouped" approach would
+    # produce as a single bid, directly comparable in the same units (total
+    # portfolio kWh/15min) to all_known_group's error, since that model is
+    # already a single portfolio-wide forecast.
+    portfolio = preds_by_name["pv_group"][["target_time", "y", "pred"]].merge(
+        preds_by_name["non_pv_group"][["target_time", "y", "pred"]],
+        on="target_time",
+        suffixes=("_pv", "_nonpv"),
+    )
+    portfolio_y = portfolio["y_pv"] + portfolio["y_nonpv"]
+    portfolio_pred = portfolio["pred_pv"] + portfolio["pred_nonpv"]
+    portfolio_mae = mean_absolute_error(portfolio_y, portfolio_pred)
+    portfolio_rmse = mean_squared_error(portfolio_y, portfolio_pred) ** 0.5
+    portfolio_mape = mean_absolute_percentage_error(portfolio_y, portfolio_pred)
+    comparison["grouped_portfolio_wide"] = {
+        "n_households": grouped_hh_sum,
+        "n_rows": int(len(portfolio)),
+        "mae": float(portfolio_mae),
+        "rmse": float(portfolio_rmse),
+        "mape": float(portfolio_mape),
+        "mae_per_household": float(portfolio_mae / grouped_hh_sum),
     }
     comparison["common_test_window_start"] = common_start
 
     print(f"\n=== Fair comparison on common test window (from {common_start}) ===")
     print(
-        f"Ungrouped single model : MAE/hh={comparison['all_known_group']['mae_per_household']:.4f}  "
-        f"MAPE={comparison['all_known_group']['mape']*100:.1f}%"
+        f"Ungrouped single model      : portfolio MAE={comparison['all_known_group']['mae']:.2f} "
+        f"kWh/15min  MAPE={comparison['all_known_group']['mape']*100:.1f}%  "
+        f"(MAE/hh={comparison['all_known_group']['mae_per_household']:.4f})"
     )
     print(
-        f"Grouped (PV + non-PV)  : MAE/hh={comparison['grouped_combined']['mae_per_household']:.4f}  "
-        f"(PV MAPE={comparison['pv_group']['mape']*100:.1f}%, non-PV MAPE={comparison['non_pv_group']['mape']*100:.1f}%)"
+        f"Grouped, portfolio-wide     : portfolio MAE={comparison['grouped_portfolio_wide']['mae']:.2f} "
+        f"kWh/15min  MAPE={comparison['grouped_portfolio_wide']['mape']*100:.1f}%  "
+        f"(MAE/hh={comparison['grouped_portfolio_wide']['mae_per_household']:.4f}; "
+        f"PV MAPE={comparison['pv_group']['mape']*100:.1f}%, non-PV MAPE={comparison['non_pv_group']['mape']*100:.1f}%)"
+    )
+    print(
+        f"Grouped, naive MAE sum      : MAE/hh={comparison['grouped_naive_mae_sum']['mae_per_household']:.4f}  "
+        f"(sums each group's own MAE -- overstates the real combined error, see code comment)"
     )
 
     with open("reports/grouping_comparison.json", "w") as f:

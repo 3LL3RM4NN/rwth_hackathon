@@ -245,38 +245,56 @@ tables in `reports/forecast_metrics.json`).
 
 ### Did grouping actually help?
 
-The three rows above aren't directly comparable — each model's test window
-is "that series' own last 20% of days," and the series have different stable
-windows. Re-scoring all three on the **same** common test window (from
-2023-12-01, the latest of the three start dates) for a fair comparison
-(`reports/grouping_comparison.json`):
+The three model-level rows above aren't directly comparable as-is — each
+model's test window is "that series' own last 20% of days," and the series
+have different stable windows. Re-scoring all three on the **same** common
+test window (from 2023-12-01, the latest of the three start dates) fixes
+that, but raises a second, more important question: *how* do you combine the
+PV and no-PV models' errors into one "grouped approach" number?
 
-| Approach | MAE/household | MAPE |
-|---|---|---|
-| Single ungrouped model (all 245 households) | **0.0620** | 15.4% |
-| Grouped (PV model + no-PV model, summed) | 0.0664 | PV 22.4% / No-PV 14.3% |
+**The naive way is wrong, and overstates the error.** Simply adding the two
+groups' own MAE values together (`reports/grouping_comparison.json`'s
+`grouped_naive_mae_sum`) implicitly assumes the PV and no-PV groups' forecast
+errors are perfectly correlated -- always wrong in the same direction, by the
+same amount, on the same day. That's not realistic: PV group errors are
+driven substantially by weather-dependent self-consumption variance, while
+no-PV errors come from different noise sources, so day to day the two groups'
+errors partially cancel once you actually add their *bids* together. The
+correct **portfolio-wide error** sums the *predictions* and the *actuals*
+across both groups first, per 15-min step, then scores that one combined
+series -- i.e. it measures what a desk bidding PV + no-PV as a single
+combined position would actually see.
 
-**Honest finding, unchanged in direction across all versions of this
-pipeline:** on raw per-household MAE, grouping is still a wash — slightly
-*worse* than a single pooled model (0.0664 vs 0.0620 kWh/15min/household).
-This is expected: summing 245 households into one series averages out more
-idiosyncratic noise than summing 131 or 114, so the pooled series is
-statistically "smoother" and easier to hit on absolute error alone.
+| Approach | Portfolio MAE (kWh/15min) | RMSE | MAPE | MAE/household |
+|---|---|---|---|---|
+| Single ungrouped model (all 245 households) | 15.18 | 19.59 | 15.4% | 0.0620 |
+| Grouped, **naive MAE sum** (wrong -- see above) | *16.28* | — | — | *0.0664* |
+| Grouped, **portfolio-wide** (correct) | **14.70** | **18.86** | **15.1%** | **0.0600** |
 
-Where grouping clearly does pay off is **relative accuracy and risk
-characterisation**: the pooled model's 15.4% MAPE hides that the PV segment
-is forecast far less reliably (22.4% MAPE) than the no-PV segment (14.3%
-MAPE). For day-ahead procurement, that gap matters more than the pooled
-headline number — it tells E.ON exactly where forecast risk concentrates
-(the PV-owning segment, driven by weather-dependent self-consumption) and
-where a wider safety margin / more conservative procurement buffer is
-warranted, which Level 3's uncertainty framing would act on directly. A
-single ungrouped model would never surface that. (This conclusion has now
-been robust across four successive, progressively-stricter versions of this
-pipeline -- hourly, 15-min with leaky weather, 15-min with leakage-free
-weather at a midnight origin, and now 15-min with a realistic pre-gate-closure
-cutoff. Only the absolute error magnitudes shift each time; the PV-vs-no-PV
-gap in *relative* terms is the robust finding.)
+**This overturns the earlier "grouping is a wash" conclusion.** The naive sum
+made grouping look slightly *worse* than the pooled model (16.28 vs 15.18);
+measured correctly, at the level that actually matters for a day-ahead
+bidding desk (the combined position's total error), grouping is slightly
+**better** (14.70 vs 15.18, ~3% lower MAE and RMSE, with MAPE also lower:
+15.1% vs 15.4%). The earlier conclusion wasn't dishonest, but it was built on
+a metric (summed per-group MAE) that silently assumes the worst case for
+error correlation between the two groups -- exactly the kind of thing that's
+easy to get wrong when comparing "grouped" to "ungrouped" approaches, and
+worth flagging as a real methodological correction rather than quietly
+revising the number.
+
+Separately from the portfolio-wide total, grouping still clearly pays off for
+**relative accuracy and risk characterisation at the segment level**: the
+pooled model's 15.4% MAPE hides that the PV segment is forecast far less
+reliably (22.4% MAPE) than the no-PV segment (14.3% MAPE). For day-ahead
+procurement, that gap matters for risk management even though the combined
+portfolio total is now *also* in grouping's favour -- it tells E.ON exactly
+where forecast risk concentrates (the PV-owning segment, driven by
+weather-dependent self-consumption) and where a wider safety margin / more
+conservative procurement buffer is warranted, which Level 3's uncertainty
+framing would act on directly. A single ungrouped model would never surface
+that, even though (per the corrected number above) it isn't actually worse on
+the portfolio total than the grouped approach.
 
 ## 5. Summary of simplifications / honesty notes
 

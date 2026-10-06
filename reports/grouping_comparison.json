@@ -23,10 +23,18 @@
     "mape": 0.15428925858168327,
     "mae_per_household": 0.061979184334341526
   },
-  "grouped_combined": {
+  "grouped_naive_mae_sum": {
     "n_households": 245,
     "mae": 16.280219247764773,
     "mae_per_household": 0.06644987448067255
+  },
+  "grouped_portfolio_wide": {
+    "n_households": 245,
+    "n_rows": 8544,
+    "mae": 14.700327382836797,
+    "rmse": 18.861149434275333,
+    "mape": 0.15105939119540757,
+    "mae_per_household": 0.060001336256476724
   },
   "common_test_window_start": "2023-12-01 00:00:00+00:00"
 }
