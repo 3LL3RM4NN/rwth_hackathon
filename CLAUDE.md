@@ -33,11 +33,19 @@ poetry run python -m src.forecast
 # with uv (used in this sandbox instead):
 uv venv && source .venv/bin/activate
 uv pip install pandas matplotlib polars numpy scikit-learn seaborn jupyterlab lightgbm
+uv pip install "proloaf @ git+https://github.com/sogno-platform/proloaf.git"
 python3 -m src.<module>
 ```
 
 There is no lint/format/test tooling configured — don't assume `ruff`/`pytest`/etc. exist
 until they're added to `pyproject.toml`.
+
+ProLoaF's `train.py`/`preprocess.py`/`evaluate.py` driver scripts (as opposed to the
+`proloaf` package itself, which the pip install above covers) are vendored as a git
+submodule at `third_party/proloaf` — run `git submodule update --init third_party/proloaf`
+after cloning. Installing from that external repo (both the pip install and the
+submodule) required explicit user approval in this sandboxed session; see
+`reports/level1_report.md` §1.
 
 ## Level 1 pipeline (`src/`)
 
@@ -48,6 +56,12 @@ python3 -m src.pv_features    # per-household PV-pattern features -> reports/pv_
 python3 -m src.pv_detection   # classifier vs surveyed PV flag -> reports/pv_detect*.{csv,json}
 python3 -m src.aggregate      # hourly group aggregates (PV / non-PV / combined) -> reports/*_hourly.csv
 python3 -m src.forecast       # LightGBM day-ahead model per group -> reports/forecast_metrics.json, grouping_comparison.json
+
+python3 -m src.export_for_proloaf    # writes targets/<name>/{raw,preprocessing.json,config.json} + submodule symlinks
+python3 third_party/proloaf/src/preprocess.py --station pv_group       # (repeat --station non_pv_group)
+python3 third_party/proloaf/src/train.py --station pv_group
+python3 third_party/proloaf/src/evaluate.py --station pv_group         # native ProLoaF plots -> targets/<name>/oracles/eval/
+python3 -m src.proloaf_evaluate      # -> reports/proloaf_metrics.json, comparable kWh-scale metrics
 ```
 
 - `src/data_loading.py` — all raw-CSV readers (households/meta/overview/weather/15-min);
@@ -62,14 +76,26 @@ python3 -m src.forecast       # LightGBM day-ahead model per group -> reports/fo
 - `src/aggregate.py` — builds the hourly group-sum series + weighted multi-station
   weather for a group; handles the meter-rollout/partial-coverage problem by trimming to
   a "stable window" (≥70% of the group's eventual households reporting).
-- `src/forecast.py` — LightGBM day-ahead (24h horizon) model per group; see its docstring
-  for the no-leakage lag-feature design (only lags ≥24h are safe across all 24 horizons).
+- `src/forecast.py` — LightGBM day-ahead (24h horizon) model per group (the first,
+  primary model); see its docstring for the no-leakage lag-feature design (only lags
+  ≥24h are safe across all 24 horizons).
+- `src/export_for_proloaf.py` — converts `reports/<name>_hourly.csv` into the raw-CSV +
+  `preprocessing.json`/`config.json` layout ProLoaF's scripts expect, and symlinks
+  `targets/<name>/` into `third_party/proloaf/targets/<name>` (its scripts resolve that
+  path relative to the submodule's own root, not cwd, so this repo's git-tracked
+  `targets/<name>/` has to be linked in rather than duplicated inside the submodule).
+  Rerun this after a fresh `git submodule update --init` to recreate the symlinks.
+- `src/proloaf_evaluate.py` — scores the trained ProLoaF models on the same day-ahead
+  (midnight-origin, 24h-horizon) definition and in the same kWh units as `forecast.py`,
+  since ProLoaF's own `evaluate.py` only benchmarks in scaled `[0,1]` space and plots two
+  sample windows rather than scoring the full test set.
 
-Full write-up of methodology, results, and known simplifications: `reports/level1_report.md`.
-ProLoaF (the brief's primary choice) was not installed/used — installing its setup code
-from an external git repo wasn't approved for this sandboxed session, so LightGBM is used
-as the documented fallback instead; see the report's §1 for details before assuming
-ProLoaF config folders (`targets/<name>/`) exist anywhere.
+Full write-up of methodology, both models' results, and known simplifications:
+`reports/level1_report.md`. LightGBM (built first, and the brief's documented fallback)
+currently outperforms ProLoaF (the brief's primary choice) on raw accuracy at this data
+scale/training budget, but ProLoaF provides native uncertainty quantification (PICP) that
+LightGBM's point forecast doesn't — see the report's §4c before assuming one
+"replaces" the other.
 
 ## Data layout and how it joins together
 
