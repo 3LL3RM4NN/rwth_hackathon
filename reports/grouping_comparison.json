@@ -1,0 +1,32 @@
+{
+  "pv_group": {
+    "n_households": 131,
+    "n_rows": 2136,
+    "mae": 32.312986858308115,
+    "rmse": 39.43704924384846,
+    "mape": 0.159049751604721,
+    "mae_per_household": 0.2466640218191459
+  },
+  "non_pv_group": {
+    "n_households": 114,
+    "n_rows": 2136,
+    "mae": 14.192995653130827,
+    "rmse": 17.89043656035705,
+    "mape": 0.07274548167407517,
+    "mae_per_household": 0.12449996186956866
+  },
+  "all_known_group": {
+    "n_households": 245,
+    "n_rows": 2136,
+    "mae": 45.33614944314475,
+    "rmse": 55.57794762148338,
+    "mape": 0.10847272471011025,
+    "mae_per_household": 0.18504550793120306
+  },
+  "grouped_combined": {
+    "n_households": 245,
+    "mae": 46.505982511438944,
+    "mae_per_household": 0.18982033678138344
+  },
+  "common_test_window_start": "2023-12-01 00:00:00+00:00"
+}

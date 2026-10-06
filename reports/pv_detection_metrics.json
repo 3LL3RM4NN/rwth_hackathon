@@ -1,0 +1,33 @@
+{
+  "n_known": 245,
+  "n_pv": 131,
+  "n_no_pv": 114,
+  "roc_auc": 0.9367215749296907,
+  "accuracy": 0.8938775510204081,
+  "pv_precision": 0.9133858267716536,
+  "pv_recall": 0.8854961832061069,
+  "pv_f1": 0.8992248062015504,
+  "no_pv_precision": 0.8728813559322034,
+  "no_pv_recall": 0.9035087719298246,
+  "no_pv_f1": 0.8879310344827587,
+  "confusion_matrix": [
+    [
+      103,
+      11
+    ],
+    [
+      15,
+      116
+    ]
+  ],
+  "n_unsurveyed": 165,
+  "n_unsurveyed_detected_pv": 27,
+  "feature_importance": {
+    "summer_midday_zero_frac": 0.3009,
+    "seasonal_contrast": 0.0144,
+    "ratio_winter_midday_to_night": 0.0087,
+    "ratio_summer_midday_to_night": 0.0085,
+    "summer_midday_cv": 0.007,
+    "corr_summer_midday_vs_sunshine": 0.0033
+  }
+}
