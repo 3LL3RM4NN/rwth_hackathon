@@ -12,7 +12,7 @@ One of the key challenges is to purchase the right amount of energy at the right
 ## How does energy procurement work?
 Energy procurement is a highly complex topic and is divided into different stages and steps. To not overwhelm you with the complexity, we will give you a simplified overview of the relevant process steps and the role of forecasting in this process.
 
-Since energy can not be stored (from a physical point of view), it needs to be produced at the same time as it is consumed. This means that energy producers and consumers need to be matched in real-time, which is done through the energy market.
+Since energy can not be stored in large scale by the electricity grid itself, it needs to be produced at the same time as it is consumed. This means that energy producers and consumers need to be matched in real-time, which is done through the energy market.
 We will focus on three stages how this matching process works:
 1. **Long-term procurement**: This is the stage where energy is procured for a longer period of time, e.g., for the next year. This is done through long-term contracts with energy producers, which are usually signed several months in advance. The energy procured here usually covers the baseload (Grundlast) of the energy consumption.
 2. **Day-ahead procurement**: This is the stage where energy is procured for the next day. This is done through the day-ahead market, where energy producers and consumers submit their bids for the next day. The day-ahead procurement tries to cover the middle load (Mittellast) of the energy consumtion.
@@ -131,7 +131,7 @@ Here are some base courses you can have a look at if you are looking for some in
 
 # Our expectations
 
-We expect participants to stay in touch with the mentors throughout the day and reach out early if you're stuck rather than saving your questions for the end.
-We are open to your questions and hope to provide as much support as possible to you given your motivation and dedication to the challenge topic.
-Given the one-day format, pick a scope you can realistically finish rather than one you can only start — a small, complete solution beats a big, unfinished one.
+We expect participants to stay in touch with the mentors throughout the day and reach out early if they are stuck.
+We are open to your questions and hope to provide as much support as possible to you.
+Given the half-day format, pick a scope you can realistically finish rather than one you can only start — a small, complete solution beats a big, unfinished one.
 Have fun and happy hacking!
