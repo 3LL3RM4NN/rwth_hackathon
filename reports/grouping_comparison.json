@@ -1,40 +1,41 @@
 {
   "pv_group": {
     "n_households": 158,
-    "n_rows": 8544,
-    "mae": 11.512546418280158,
-    "rmse": 14.948254891213285,
-    "mape": 0.21729513949325346,
-    "mae_per_household": 0.07286421783721618
+    "n_rows": 16416,
+    "mae_per_household": 0.05436649371785858,
+    "rmse_per_household": 0.07386015522880555,
+    "mape": 0.21597180800834798,
+    "mae_total": 8.1213790878439,
+    "rmse_total": 11.047388133405832
   },
   "non_pv_group": {
     "n_households": 252,
-    "n_rows": 8544,
-    "mae": 14.831654094152078,
-    "rmse": 19.096325929020153,
-    "mape": 0.13223193262563715,
-    "mae_per_household": 0.0588557702148892
+    "n_rows": 16416,
+    "mae_per_household": 0.043039823300238665,
+    "rmse_per_household": 0.05877643698937703,
+    "mape": 0.11789200562118426,
+    "mae_total": 10.123922262410888,
+    "rmse_total": 13.819289478634701
   },
   "all_households_group": {
     "n_households": 410,
-    "n_rows": 8544,
-    "mae": 24.192882512772268,
-    "rmse": 31.596435032635025,
-    "mape": 0.13986723854384003,
-    "mae_per_household": 0.059007030518956755
+    "n_rows": 16416,
+    "mae_per_household": 0.04325678280210857,
+    "rmse_per_household": 0.058901218694500844,
+    "mape": 0.12865288208069672,
+    "mae_total": 16.642592911322435,
+    "rmse_total": 22.670253470350566
   },
   "grouped_naive_mae_sum": {
     "n_households": 410,
-    "mae": 26.344200512432238,
-    "mae_per_household": 0.06425414759129815
+    "mae_total": 18.24530135025479
   },
   "grouped_portfolio_wide": {
     "n_households": 410,
-    "n_rows": 8544,
-    "mae": 24.27307104056787,
-    "rmse": 31.575640307042068,
-    "mape": 0.1390102323279649,
-    "mae_per_household": 0.05920261229406798
+    "n_rows": 16416,
+    "mae_total": 16.45318342653546,
+    "rmse_total": 22.566822032449835,
+    "mape": 0.1264401833447981
   },
-  "common_test_window_start": "2023-12-01 00:00:00+00:00"
+  "common_test_window_start": "2023-09-05 00:00:00+00:00"
 }

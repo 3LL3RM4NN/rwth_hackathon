@@ -17,13 +17,20 @@ Three things have to be handled explicitly, per the task brief:
 
 1. **Partial household coverage.** Households were instrumented at different
    times over 2019-2024, so the number of households reporting at a given
-   timestamp ramps up over the series and is not constant. Summing
-   ``kWh_received_Total`` over whatever happens to be reporting would make the
-   aggregate's *level* track meter rollout rather than real demand. We instead
-   restrict each group to a trailing window where at least
-   ``MIN_COVERAGE_FRAC`` of the group's eventual household count is reporting,
-   and still record the active-household count per timestamp so this can be
-   inspected/adjusted.
+   timestamp ramps up over the series and is not constant -- by mid-2021 only
+   ~20-35% of each group's eventual households had even started. Forecasting
+   is done on ``kWh_mean_per_active_household`` (the group sum divided by
+   however many households are reporting at that timestamp) rather than the
+   raw sum specifically *because* that ratio is far more stable across a
+   changing household count than the sum is. The window is still trimmed to
+   where at least ``MIN_HOUSEHOLDS`` are reporting -- an *absolute* floor, not
+   a fraction of the group's eventual size -- since the ratio is still noisy
+   when only a handful of households are behind it; this floor is low enough
+   to recover roughly a year and a half of additional history (back to
+   ~2021) that an earlier, sum-based version of this pipeline discarded
+   entirely. The active-household count is kept as a column so downstream
+   code (``forecast.py``) can rescale predicted per-household averages back
+   to group totals using the *actual* historical count for that timestamp.
 2. **Multi-station weather.** A group's households are spread across several
    of the 8 weather stations. Group-level weather features are a
    household-count-weighted average across the stations actually used by that
@@ -51,7 +58,9 @@ import pandas as pd
 from src import data_loading as dl
 from src.pv_features import household_resampled_total
 
-MIN_COVERAGE_FRAC = 0.7  # keep timestamps where >=70% of the group's households report
+MIN_HOUSEHOLDS = 30  # absolute floor: below this, the per-household average is too
+                      # noisy (dominated by a handful of households' idiosyncrasies)
+                      # to trust as a representative group-level statistic.
 CONSUMPTION_FREQ = "15min"  # native smart-meter resolution; weather is upsampled to match
 WEATHER_COLUMNS = [
     "Temperature_avg_hourly",
@@ -87,7 +96,8 @@ def group_household_ids(pv: bool | None) -> list[str]:
 
 
 def build_group_consumption(household_ids: list[str]) -> pd.DataFrame:
-    """Per-15-min summed consumption and active-household count for a group."""
+    """Per-15-min summed + per-household-average consumption, and the
+    active-household count, for a group."""
     series = {}
     n = len(household_ids)
     print(f"Loading+resampling 15-min data for {n} households...")
@@ -99,21 +109,24 @@ def build_group_consumption(household_ids: list[str]) -> pd.DataFrame:
     active_count = wide.notna().sum(axis=1)
     group_sum = wide.sum(axis=1, min_count=1)
     out = pd.DataFrame(
-        {"kWh_total_group_sum": group_sum, "active_household_count": active_count}
+        {
+            "kWh_total_group_sum": group_sum,
+            "kWh_mean_per_active_household": group_sum / active_count,
+            "active_household_count": active_count,
+        }
     )
     return out
 
 
-def restrict_to_stable_window(df: pd.DataFrame, n_households: int) -> pd.DataFrame:
-    threshold = MIN_COVERAGE_FRAC * n_households
-    stable = df.index[df["active_household_count"] >= threshold]
+def restrict_to_minimum_household_window(df: pd.DataFrame, min_households: int = MIN_HOUSEHOLDS) -> pd.DataFrame:
+    stable = df.index[df["active_household_count"] >= min_households]
     if stable.empty:
-        raise ValueError("No timestamps meet the minimum coverage threshold.")
+        raise ValueError("No timestamps meet the minimum household count.")
     start, end = stable.min(), stable.max()
     window = df.loc[start:end].copy()
-    # Within the stable window a handful of individual hours can still dip
-    # below threshold (a household briefly offline); keep them but flag.
-    window["below_coverage_threshold"] = window["active_household_count"] < threshold
+    # Within the window a handful of individual steps can still dip below the
+    # floor (a household briefly offline); keep them but flag.
+    window["below_coverage_threshold"] = window["active_household_count"] < min_households
     return window
 
 
@@ -151,7 +164,7 @@ def build_group(pv: bool) -> pd.DataFrame:
     ids = group_household_ids(pv)
     print(f"Group has {len(ids)} households with a 15-min file on disk.")
     consumption = build_group_consumption(ids)
-    consumption = restrict_to_stable_window(consumption, len(ids))
+    consumption = restrict_to_minimum_household_window(consumption)
     weather = build_group_weather(ids)
     merged = consumption.join(weather, how="left")
     merged.attrs["n_households"] = len(ids)
@@ -168,5 +181,5 @@ if __name__ == "__main__":
             f"rows={len(df)}, range=[{df.index.min()} .. {df.index.max()}], "
             f"below_coverage_steps={int(df['below_coverage_threshold'].sum())}"
         )
-        print(df[["kWh_total_group_sum", "active_household_count"]].describe())
+        print(df[["kWh_total_group_sum", "kWh_mean_per_active_household", "active_household_count"]].describe())
         df.to_csv(f"reports/{name}_15min.csv")

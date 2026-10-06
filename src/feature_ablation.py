@@ -3,10 +3,11 @@
 For each feature in ``forecast.FEATURE_COLUMNS``, retrains the ``pv_group``
 and ``non_pv_group`` LightGBM models with that one feature removed, then
 recomputes the combined-bid metric from ``forecast.py``'s "Did grouping
-actually help?" analysis (sum predictions + actuals across both groups per
-15-min step over their common held-out test window, then score MAPE on the
-combined series) and reports how much it changes versus the full-feature
-baseline.
+actually help?" analysis (rescale each group's per-household-average
+prediction back to a kWh total via its own ``active_household_count``, sum
+the two groups' totals per 15-min step over their common held-out test
+window, then score MAPE on the combined series) and reports how much it
+changes versus the full-feature baseline.
 
 The train/test *row set* is fixed once, from the full feature list's
 ``dropna`` (exactly matching ``forecast.py``'s own split) -- every ablation
@@ -64,17 +65,26 @@ def portfolio_mape(
     nonpv_pred: pd.Series,
     common_start: pd.Timestamp,
 ) -> float:
-    pv = pv_test[["origin", "target_time", "y"]].copy()
+    # y/pred are per-household averages (forecast.TARGET); rescale each group
+    # by its own active_household_count back to a group kWh total before
+    # summing the two groups, same as forecast.py's own portfolio-wide metric.
+    pv = pv_test[["origin", "target_time", "y", "active_household_count"]].copy()
     pv["pred"] = pv_pred
     pv = pv[pv["origin"] >= common_start]
+    pv["y_total"] = pv["y"] * pv["active_household_count"]
+    pv["pred_total"] = pv["pred"] * pv["active_household_count"]
 
-    nonpv = nonpv_test[["origin", "target_time", "y"]].copy()
+    nonpv = nonpv_test[["origin", "target_time", "y", "active_household_count"]].copy()
     nonpv["pred"] = nonpv_pred
     nonpv = nonpv[nonpv["origin"] >= common_start]
+    nonpv["y_total"] = nonpv["y"] * nonpv["active_household_count"]
+    nonpv["pred_total"] = nonpv["pred"] * nonpv["active_household_count"]
 
-    merged = pv.merge(nonpv, on="target_time", suffixes=("_pv", "_nonpv"))
-    actual = merged["y_pv"] + merged["y_nonpv"]
-    pred = merged["pred_pv"] + merged["pred_nonpv"]
+    merged = pv[["target_time", "y_total", "pred_total"]].merge(
+        nonpv[["target_time", "y_total", "pred_total"]], on="target_time", suffixes=("_pv", "_nonpv")
+    )
+    actual = merged["y_total_pv"] + merged["y_total_nonpv"]
+    pred = merged["pred_total_pv"] + merged["pred_total_nonpv"]
     return float(mean_absolute_percentage_error(actual, pred))
 
 

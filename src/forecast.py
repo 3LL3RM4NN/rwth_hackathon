@@ -1,6 +1,22 @@
 """Day-ahead, group-level forecasting model (LightGBM), built on the
 15-minute-resolution aggregates from ``src/aggregate.py``.
 
+Target: per-household average, not group total
+------------------------------------------------
+The model is trained on ``kWh_mean_per_active_household`` (the group's summed
+consumption divided by however many households were reporting at that
+instant), not the raw group total. This isn't a per-household model -- it's
+still one model per group -- but the *ratio* is far more stable across
+``aggregate.py``'s household-rollout ramp-up than the raw sum is, which is
+what lets the usable history start ~1.5-2 years earlier than a sum-based
+version of this pipeline could (see ``aggregate.py``'s module docstring).
+Predictions are rescaled back to group/portfolio kWh totals at evaluation
+time by multiplying by the *actual* historical ``active_household_count`` for
+that timestamp -- realistic for a desk that knows its own contract count in
+advance, though it does assume that count (not just the consumption rate) is
+knowable ahead of the forecast, same spirit as the weather-actuals
+simplification elsewhere in this pipeline.
+
 Matching the actual day-ahead market use case
 ----------------------------------------------
 Day-ahead market bids have to be submitted by a fixed gate-closure time the
@@ -92,7 +108,7 @@ WEATHER_FEATURES = [
     "Sunshine_duration_hourly",
     "WindSpeed_hourly",
 ]
-TARGET = "kWh_total_group_sum"
+TARGET = "kWh_mean_per_active_household"
 TRAIN_FRACTION = 0.8
 
 
@@ -162,6 +178,10 @@ def build_supervised_table(df: pd.DataFrame) -> pd.DataFrame:
 
     table["origin"] = idx.normalize()
     table["target_time"] = idx
+    # Not a model feature -- carried through purely so evaluation can rescale
+    # the per-household-average prediction back to a group/portfolio kWh
+    # total (see module docstring).
+    table["active_household_count"] = df["active_household_count"]
     # horizon = 15-min-of-day index (0..95): which of the day's 96 targets this is.
     table["horizon"] = idx.hour * STEPS_PER_HOUR + idx.minute // 15
     # lead_time_steps = steps from the cutoff to this target (49..144): how far
@@ -221,9 +241,22 @@ def train_and_evaluate(name: str, n_households: int) -> dict:
     print(f"Evaluating on {len(test)} held-out rows...")
     pred = model.predict(test[FEATURE_COLUMNS])
 
+    # mae/rmse/mape are on the kWh-per-household-per-15min scale, since that's
+    # what the model actually predicts now (see module docstring). mae_total/
+    # rmse_total rescale both actual and predicted by the *realized* historical
+    # active_household_count for that row to get back to group-total kWh/15min
+    # -- MAPE is scale-invariant to this rescaling (the count cancels in the
+    # ratio since it multiplies both actual and predicted identically), so
+    # there's only one mape, not a separate "total" version.
     mae = mean_absolute_error(test["y"], pred)
     rmse = mean_squared_error(test["y"], pred) ** 0.5
     mape = mean_absolute_percentage_error(test["y"], pred)
+
+    count = test["active_household_count"]
+    y_total = test["y"] * count
+    pred_total = pred * count
+    mae_total = mean_absolute_error(y_total, pred_total)
+    rmse_total = mean_squared_error(y_total, pred_total) ** 0.5
 
     by_horizon = (
         pd.DataFrame({"horizon": test["horizon"], "y": test["y"], "pred": pred})
@@ -241,6 +274,10 @@ def train_and_evaluate(name: str, n_households: int) -> dict:
     # so those few rows are excluded from this comparison specifically.
     naive_valid = test.dropna(subset=["naive_same_timeofday_last_week"])
     naive_mae = mean_absolute_error(naive_valid["y"], naive_valid["naive_same_timeofday_last_week"])
+    naive_mae_total = mean_absolute_error(
+        naive_valid["y"] * naive_valid["active_household_count"],
+        naive_valid["naive_same_timeofday_last_week"] * naive_valid["active_household_count"],
+    )
 
     result = {
         "name": name,
@@ -251,18 +288,20 @@ def train_and_evaluate(name: str, n_households: int) -> dict:
         "n_rows_test": int(len(test)),
         "train_origin_range": [str(train["origin"].min()), str(train["origin"].max())],
         "test_origin_range": [str(test["origin"].min()), str(test["origin"].max())],
-        "mae": float(mae),
-        "rmse": float(rmse),
+        "mae_per_household": float(mae),
+        "rmse_per_household": float(rmse),
         "mape": float(mape),
-        "mae_per_household": float(mae / n_households),
-        "naive_lag168_mae": float(naive_mae),
+        "mae_total": float(mae_total),
+        "rmse_total": float(rmse_total),
+        "naive_mae_per_household": float(naive_mae),
+        "naive_mae_total": float(naive_mae_total),
         "mae_by_horizon": by_horizon.round(3).to_dict(),
         "feature_importance": pd.Series(
             model.feature_importances_, index=FEATURE_COLUMNS
         ).sort_values(ascending=False).to_dict(),
     }
 
-    test_out = test[["origin", "horizon", "target_time", "y"]].copy()
+    test_out = test[["origin", "horizon", "target_time", "y", "active_household_count"]].copy()
     test_out["pred"] = pred
     test_out.to_csv(f"reports/{name}_test_predictions.csv", index=False)
 
@@ -279,9 +318,12 @@ if __name__ == "__main__":
         print(f"\n=== {name} ===")
         print(f"households={res['n_households']}  train_rows={res['n_rows_train']}  test_rows={res['n_rows_test']}")
         print(f"test period: {res['test_origin_range']}")
-        print(f"MAE={res['mae']:.2f} kWh/15min  RMSE={res['rmse']:.2f} kWh/15min  MAPE={res['mape']*100:.1f}%")
-        print(f"MAE per household={res['mae_per_household']:.4f} kWh/15min")
-        print(f"naive (same 15-min-of-day, last week) MAE={res['naive_lag168_mae']:.2f} kWh/15min")
+        print(
+            f"MAE/household={res['mae_per_household']:.4f} kWh/15min  "
+            f"RMSE/household={res['rmse_per_household']:.4f}  MAPE={res['mape']*100:.1f}%"
+        )
+        print(f"MAE (rescaled to group total)={res['mae_total']:.2f} kWh/15min")
+        print(f"naive (same 15-min-of-day, last week) MAE/household={res['naive_mae_per_household']:.4f} kWh/15min")
 
     with open("reports/forecast_metrics.json", "w") as f:
         json.dump(results, f, indent=2)
@@ -289,7 +331,7 @@ if __name__ == "__main__":
     # Fair grouped-vs-ungrouped comparison: each model above was evaluated on
     # its own series' last 20% of days, which differ in length/start date
     # across groups (series start at different points due to meter rollout),
-    # so their MAE numbers above aren't directly comparable to each other.
+    # so their numbers above aren't directly comparable to each other.
     # Re-score all three on the single latest common test window instead.
     print("\nRe-scoring all groups on the common held-out test window...")
     common_start = max(r["test_origin_range"][0] for r in results.values())
@@ -304,71 +346,82 @@ if __name__ == "__main__":
         mae = mean_absolute_error(preds["y"], preds["pred"])
         rmse = mean_squared_error(preds["y"], preds["pred"]) ** 0.5
         mape = mean_absolute_percentage_error(preds["y"], preds["pred"])
+        y_total = preds["y"] * preds["active_household_count"]
+        pred_total = preds["pred"] * preds["active_household_count"]
+        mae_total = mean_absolute_error(y_total, pred_total)
+        rmse_total = mean_squared_error(y_total, pred_total) ** 0.5
         comparison[name] = {
             "n_households": res["n_households"],
             "n_rows": int(len(preds)),
-            "mae": float(mae),
-            "rmse": float(rmse),
+            "mae_per_household": float(mae),
+            "rmse_per_household": float(rmse),
             "mape": float(mape),
-            "mae_per_household": float(mae / res["n_households"]),
+            "mae_total": float(mae_total),
+            "rmse_total": float(rmse_total),
         }
 
-    # Naive sum of each group's own MAE -- kept for contrast, but this
-    # *overstates* the real combined-bid error: it implicitly assumes the PV
-    # and non-PV groups' forecast errors are perfectly correlated (always
+    # Naive sum of each group's own total-scale MAE -- kept for contrast, but
+    # this *overstates* the real combined-bid error: it implicitly assumes the
+    # PV and non-PV groups' forecast errors are perfectly correlated (always
     # wrong in the same direction by the same amount), when in reality
     # independent errors partially cancel once you actually add the two
     # groups' bids together. See "portfolio-wide" below for the real number.
-    grouped_mae_sum = comparison["pv_group"]["mae"] + comparison["non_pv_group"]["mae"]
+    grouped_mae_sum = comparison["pv_group"]["mae_total"] + comparison["non_pv_group"]["mae_total"]
     grouped_hh_sum = comparison["pv_group"]["n_households"] + comparison["non_pv_group"]["n_households"]
     comparison["grouped_naive_mae_sum"] = {
         "n_households": grouped_hh_sum,
-        "mae": grouped_mae_sum,
-        "mae_per_household": grouped_mae_sum / grouped_hh_sum,
+        "mae_total": grouped_mae_sum,
     }
 
     # Portfolio-wide error: what the day-ahead desk actually cares about if
-    # PV and non-PV are bid as one combined position -- sum the *predictions*
-    # and the *actuals* across both groups first (per 15-min step), then score
-    # the combined series. This is the real error the "grouped" approach would
-    # produce as a single bid, directly comparable in the same units (total
-    # portfolio kWh/15min) to all_households_group's error, since that model is
-    # already a single portfolio-wide forecast.
-    portfolio = preds_by_name["pv_group"][["target_time", "y", "pred"]].merge(
-        preds_by_name["non_pv_group"][["target_time", "y", "pred"]],
+    # PV and non-PV are bid as one combined position. Each group's prediction
+    # is per-household-average, so first rescale both actual and predicted by
+    # that *group's own* active_household_count back to a group kWh total,
+    # then sum the two groups' totals per 15-min step, then score the combined
+    # series. This is the real error the "grouped" approach would produce as a
+    # single bid, directly comparable to all_households_group's error (also
+    # rescaled to a portfolio total via its own count), since both are now a
+    # single portfolio-wide kWh/15min forecast.
+    pv_preds = preds_by_name["pv_group"][["target_time", "y", "pred", "active_household_count"]].copy()
+    pv_preds["y_total"] = pv_preds["y"] * pv_preds["active_household_count"]
+    pv_preds["pred_total"] = pv_preds["pred"] * pv_preds["active_household_count"]
+    nonpv_preds = preds_by_name["non_pv_group"][["target_time", "y", "pred", "active_household_count"]].copy()
+    nonpv_preds["y_total"] = nonpv_preds["y"] * nonpv_preds["active_household_count"]
+    nonpv_preds["pred_total"] = nonpv_preds["pred"] * nonpv_preds["active_household_count"]
+
+    portfolio = pv_preds[["target_time", "y_total", "pred_total"]].merge(
+        nonpv_preds[["target_time", "y_total", "pred_total"]],
         on="target_time",
         suffixes=("_pv", "_nonpv"),
     )
-    portfolio_y = portfolio["y_pv"] + portfolio["y_nonpv"]
-    portfolio_pred = portfolio["pred_pv"] + portfolio["pred_nonpv"]
+    portfolio_y = portfolio["y_total_pv"] + portfolio["y_total_nonpv"]
+    portfolio_pred = portfolio["pred_total_pv"] + portfolio["pred_total_nonpv"]
     portfolio_mae = mean_absolute_error(portfolio_y, portfolio_pred)
     portfolio_rmse = mean_squared_error(portfolio_y, portfolio_pred) ** 0.5
     portfolio_mape = mean_absolute_percentage_error(portfolio_y, portfolio_pred)
     comparison["grouped_portfolio_wide"] = {
         "n_households": grouped_hh_sum,
         "n_rows": int(len(portfolio)),
-        "mae": float(portfolio_mae),
-        "rmse": float(portfolio_rmse),
+        "mae_total": float(portfolio_mae),
+        "rmse_total": float(portfolio_rmse),
         "mape": float(portfolio_mape),
-        "mae_per_household": float(portfolio_mae / grouped_hh_sum),
     }
     comparison["common_test_window_start"] = common_start
 
     print(f"\n=== Fair comparison on common test window (from {common_start}) ===")
     print(
-        f"Ungrouped single model      : portfolio MAE={comparison['all_households_group']['mae']:.2f} "
+        f"Ungrouped single model      : portfolio MAE={comparison['all_households_group']['mae_total']:.2f} "
         f"kWh/15min  MAPE={comparison['all_households_group']['mape']*100:.1f}%  "
         f"(MAE/hh={comparison['all_households_group']['mae_per_household']:.4f})"
     )
     print(
-        f"Grouped, portfolio-wide     : portfolio MAE={comparison['grouped_portfolio_wide']['mae']:.2f} "
+        f"Grouped, portfolio-wide     : portfolio MAE={comparison['grouped_portfolio_wide']['mae_total']:.2f} "
         f"kWh/15min  MAPE={comparison['grouped_portfolio_wide']['mape']*100:.1f}%  "
-        f"(MAE/hh={comparison['grouped_portfolio_wide']['mae_per_household']:.4f}; "
-        f"PV MAPE={comparison['pv_group']['mape']*100:.1f}%, non-PV MAPE={comparison['non_pv_group']['mape']*100:.1f}%)"
+        f"(PV MAPE={comparison['pv_group']['mape']*100:.1f}%, non-PV MAPE={comparison['non_pv_group']['mape']*100:.1f}%)"
     )
     print(
-        f"Grouped, naive MAE sum      : MAE/hh={comparison['grouped_naive_mae_sum']['mae_per_household']:.4f}  "
-        f"(sums each group's own MAE -- overstates the real combined error, see code comment)"
+        f"Grouped, naive MAE sum      : portfolio MAE={comparison['grouped_naive_mae_sum']['mae_total']:.2f}  "
+        f"(sums each group's own total-scale MAE -- overstates the real combined error, see code comment)"
     )
 
     with open("reports/grouping_comparison.json", "w") as f:

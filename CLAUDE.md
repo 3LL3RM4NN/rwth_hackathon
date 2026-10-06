@@ -63,27 +63,35 @@ python3 -m src.feature_ablation  # optional: leave-one-feature-out impact on por
   `aggregate.py`'s `household_pv_labels()` consumes this: surveyed flag where known, this
   detector's output as a fallback for the rest -- so run `pv_detection.py` before
   `aggregate.py` (the documented pipeline order already does this).
-- `src/aggregate.py` — builds the group-sum consumption series at its **native 15-min
-  resolution** (not downsampled to match weather) + weighted multi-station weather
-  **upsampled** from hourly to 15-min via time-based linear interpolation; groups are
-  158 PV / 252 no-PV / 410 all-households (every household on disk lands in one group or
-  the other, none excluded); handles the meter-rollout/partial-coverage problem by
-  trimming to a "stable window" (≥70% of the
-  group's eventual households reporting).
+- `src/aggregate.py` — builds the group-sum **and per-household-average**
+  (`kWh_mean_per_active_household`) consumption series at its **native 15-min resolution**
+  (not downsampled to match weather) + weighted multi-station weather **upsampled** from
+  hourly to 15-min via time-based linear interpolation; groups are 158 PV / 252 no-PV /
+  410 all-households (every household on disk lands in one group or the other, none
+  excluded); handles the meter-rollout/partial-coverage problem by trimming to a window
+  with an absolute floor on active households (`MIN_HOUSEHOLDS = 30`), not a fraction of
+  the group's eventual size — the per-household average is far more stable across a
+  changing household count than the raw sum is, so an absolute floor is enough and
+  recovers ~1-2 extra years of history versus an earlier, sum-based/70%-relative-threshold
+  version of this pipeline.
 - `src/forecast.py` — LightGBM day-ahead model per group at 15-min steps (horizon = 96
-  steps = 24h), matching the actual day-ahead market use case: every feature is anchored
-  to a fixed **gate-closure cutoff of 11:45 AM (before noon) the day before delivery** (`CUTOFF_HOUR`/
-  `CUTOFF_MINUTE`), not to midnight of the delivery day — bids have to be submitted before
-  gate closure, so the last ~12h of the previous day isn't actually known at bid time
-  either (an earlier version of this pipeline assumed it was, via a midnight-anchored
-  origin). Target and weather lag/rolling features are looked up via `Series.reindex` at
-  fixed offsets *before this cutoff* (always safe by construction, for all 96 targets of a
-  day at once), not via a per-row constant-steps-before-*t* shift. See its docstring for
-  the full derivation (including why the same-time-of-day lookback needs k>=2 days now,
-  not k>=1) and the fully-vectorised feature construction (no per-row Python loop, no
-  per-day groupby either). Same-day weather *actuals* are never used as a forecast
-  stand-in (an earlier version of this pipeline did that as a brief-sanctioned
-  simplification; that's a real fix now, not just a disclosed shortcut).
+  steps = 24h), trained on `kWh_mean_per_active_household` (not the raw group total --
+  see `aggregate.py` above for why); predictions are rescaled back to group/portfolio kWh
+  totals at evaluation time by multiplying by the *actual* historical
+  `active_household_count` for that timestamp. Matches the actual day-ahead market use
+  case: every feature is anchored to a fixed **gate-closure cutoff of 11:45 AM (before
+  noon) the day before delivery** (`CUTOFF_HOUR`/`CUTOFF_MINUTE`), not to midnight of the
+  delivery day — bids have to be submitted before gate closure, so the last ~12h of the
+  previous day isn't actually known at bid time either (an earlier version of this
+  pipeline assumed it was, via a midnight-anchored origin). Target and weather lag/rolling
+  features are looked up via `Series.reindex` at fixed offsets *before this cutoff*
+  (always safe by construction, for all 96 targets of a day at once), not via a per-row
+  constant-steps-before-*t* shift. See its docstring for the full derivation (including
+  why the same-time-of-day lookback needs k>=2 days now, not k>=1) and the
+  fully-vectorised feature construction (no per-row Python loop, no per-day groupby
+  either). Same-day weather *actuals* are never used as a forecast stand-in (an earlier
+  version of this pipeline did that as a brief-sanctioned simplification; that's a real
+  fix now, not just a disclosed shortcut).
 - `src/feature_ablation.py` — leave-one-feature-out check against the "Grouped,
   portfolio-wide" MAPE from `forecast.py`'s own grouped-vs-ungrouped comparison: retrains
   pv_group/non_pv_group with each of `FEATURE_COLUMNS` dropped in turn (same fixed

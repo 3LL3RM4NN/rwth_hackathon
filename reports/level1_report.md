@@ -118,33 +118,43 @@ breakdown of those two columns exists anywhere in this dataset, so there's no
 more-correct disaggregation available either; the continuous variables
 (temperature, dew point, humidity, wind speed) have no such issue.
 
-**Partial coverage.** Households were instrumented at different times across
-2019–2024 (per-household coverage varies, see
-`data/smart_meter_meta_data/smart_meter_data_15min_overview.csv`), so a group's
-active-household count ramps up over the raw series. Summing blindly over the
-full history would make the aggregate's level track meter rollout rather than
-demand. Each group's series is restricted to the trailing window where at
-least 70% of its eventual household count is reporting, and the active count
-is kept as a column:
+**Partial coverage, and why we forecast a per-household average, not a sum.**
+Households were instrumented at different times across 2019–2024 (per-household
+coverage varies, see `data/smart_meter_meta_data/smart_meter_data_15min_overview.csv`),
+so a group's active-household count ramps up over the raw series -- as late as
+mid-2021, only ~20-35% of each group's *eventual* households had even started
+reporting. An earlier version of this pipeline summed raw consumption and
+discarded everything before the point where 70% of the group's eventual size
+was reporting, since a raw sum's level otherwise just tracks meter rollout,
+not demand. This version instead forecasts `kWh_mean_per_active_household`
+(the group sum divided by however many households are reporting at that
+instant) -- a ratio that stays far more stable across a changing household
+count than the sum does, which lets the window requirement drop to an
+*absolute* floor (`MIN_HOUSEHOLDS = 30`) instead of a fraction of the group's
+eventual size, recovering roughly 1-2 extra years of history:
 
 | Group | Households | Stable window | Active count (mean / min / max) |
 |---|---|---|---|
-| PV | 158 | 2022-11-30 → 2024-02-27 (43,680 15-min steps) | 140.6 / 0 / 153 |
-| No-PV | 252 | 2022-10-25 → 2024-02-27 (47,136 15-min steps) | 226.6 / 0 / 241 |
+| PV | 158 | 2021-10-11 → 2024-02-27 (83,520 15-min steps) | 103.3 / 0 / 153 |
+| No-PV | 252 | 2020-10-16 → 2024-02-27 (118,080 15-min steps) | 148.4 / 0 / 241 |
 
-(Larger groups than the surveyed-only version shift the stable windows
-slightly -- the 70% threshold now has to be met by more households, and the
-165 newly-added households weren't all instrumented on the same schedule as
-the 245 surveyed ones.)
+(Compare to 2022-11-30 / 2022-10-25 for the sum-based, 70%-relative-threshold
+version -- roughly **1.1 more years of history for PV, 2 more years for
+no-PV**. `src/forecast.py` rescales predicted per-household averages back to
+group/portfolio kWh totals at evaluation time by multiplying by the *actual*
+historical `active_household_count` for that timestamp -- realistic for a
+desk that knows its own contract count in advance, though it assumes that
+count is knowable ahead of the forecast the same way the weather-actuals
+simplification below assumes weather is.)
 
-Even inside the stable window, one full calendar day (**2023-10-29**, every
-household across all three groups simultaneously) is a 0-coverage gap — an
-apparent provider-side outage, not a bug in the aggregation (confirmed to
-still be a universal, group-composition-independent outage after growing the
-groups); it's left as `NaN` and dropped downstream rather than imputed. 384
-(PV) / 288 (no-PV) 15-min steps total fall below the 70% threshold inside the
-stable window and are flagged in `below_coverage_threshold` but not dropped,
-since they're scattered single missing meters rather than wholesale gaps.
+Even inside the window, one full calendar day (**2023-10-29**, every
+household across all three groups simultaneously, confirmed again after
+extending the windows) is a 0-coverage gap — an apparent provider-side
+outage, not a bug in the aggregation; it's left as `NaN` and dropped
+downstream rather than imputed. 192 (PV) / 288 (no-PV) 15-min steps total
+fall below the `MIN_HOUSEHOLDS` floor inside the window and are flagged in
+`below_coverage_threshold` but not dropped, since they're scattered single
+missing meters rather than wholesale gaps.
 
 **Multi-station weather.** Each group's households map to multiple weather
 stations (e.g. PV group: 64 households on station `8jB`, 59 on `Hg`, the rest
@@ -167,10 +177,14 @@ already known -- which isn't actually true at real bidding time: the last
 every one of day D's 96 targets is now computed as of this single, fixed
 cutoff instead.
 
-**Target & resolution:** `kWh_received_Total` summed per group at its
-**native 15-minute resolution**. The forecast horizon is 96 15-min steps
-(24h): one full day's worth of bids, submitted in a single batch as of the
-11:45-the-day-before cutoff.
+**Target & resolution:** `kWh_mean_per_active_household` (group consumption
+divided by however many households are reporting at that instant -- see §3
+for why this, not the raw group sum, is the target) at its **native
+15-minute resolution**. The forecast horizon is 96 15-min steps (24h): one
+full day's worth of bids, submitted in a single batch as of the
+11:45-the-day-before cutoff. Predictions are rescaled back to group/portfolio
+kWh totals at evaluation time using the *actual* historical
+`active_household_count` for each timestamp.
 
 **Cutoff-anchored features, not origin-anchored ones.** For target `t` on
 delivery day D, `cutoff = D.normalize() - 12h15m` (D-1, 11:45). Two kinds of
@@ -224,27 +238,32 @@ models.
 
 ### Results
 
-Units are **kWh per 15-min interval**. These numbers reflect the current,
-detector-grown groups (158 PV / 252 no-PV / 410 all-households); the raw MAE
-values are correspondingly larger than earlier, smaller-group versions purely
-because the groups themselves are bigger (more households summed) -- MAE
-isn't comparable across different versions of this pipeline unless you
-account for that (MAE/household and MAPE are the two columns that still are).
+Units for MAE/RMSE are **kWh per household per 15-min interval** (the model's
+native output -- see §3/above); "rescaled to total" multiplies back by each
+row's actual historical `active_household_count` to give group-level
+kWh/15min, comparable across groups of different sizes and to the raw totals
+earlier versions of this pipeline reported directly.
 
-| Group | Households | Test period | MAE (kWh/15min) | RMSE | MAPE | MAE/household | Naive (same 15-min-of-day, last week) MAE |
+| Group | Households | Test period | MAE/household | RMSE/household | MAPE | MAE rescaled to total (kWh/15min) | Naive MAE/household (same 15-min-of-day, last week) |
 |---|---|---|---|---|---|---|---|
-| PV | 158 | 2023-12-01 → 2024-02-27 | 11.51 | 14.95 | **21.7%** | 0.0729 | 16.76 |
-| No-PV | 252 | 2023-11-24 → 2024-02-27 | 14.91 | 19.14 | **13.2%** | 0.0592 | 22.00 |
-| All-households (ungrouped) | 410 | 2023-11-28 → 2024-02-27 | 24.02 | 31.33 | 13.9% | 0.0586 | 37.33 |
+| PV | 158 | 2023-09-05 → 2024-02-27 | 0.0544 | 0.0739 | **21.6%** | 8.12 | 0.0843 |
+| No-PV | 252 | 2023-06-25 → 2024-02-27 | 0.0347 | 0.0504 | **11.0%** | 8.18 | 0.0554 |
+| All-households (ungrouped) | 410 | 2023-05-30 → 2024-02-27 | 0.0328 | 0.0483 | 11.9% | 12.60 | 0.0527 |
 
-The model still clearly beats the naive baseline in every case (~1.4-1.5x on
-MAE, essentially unchanged from before growing the groups), so there's real
-learned structure beyond "assume today looks like last week." MAPE and
-MAE/household are both close to the surveyed-only version's numbers (PV MAPE
-21.7% vs 22.4% before, no-PV 13.2% vs 14.5%) -- adding the detector-labelled
-households didn't meaningfully change per-household forecastability, which is
-a reassuring sign that the detector's ~89% accuracy (§2) isn't injecting much
-noise into the groups' aggregate behaviour.
+Test periods are now 2-3x longer than the surveyed-only/sum-based version's
+(e.g. PV: 6 months vs 3) since training on roughly 1-2 more years of history
+(§3) pushes the chronological 80/20 split's test boundary earlier too. The
+model still clearly beats the naive baseline in every case (~1.5-1.65x on
+MAE/household), so there's real learned structure beyond "assume today looks
+like last week." MAPE improved meaningfully for the non-PV and all-households
+groups versus the smaller-window version of this pipeline (non-PV 13.2% ->
+11.0%, all-households 13.9% -> 11.9%) while the PV group's stayed about the
+same (21.7% -> 21.6%) -- plausibly because the newly-recovered PV-group
+history (2021-10 onward) still postdates most of the relevant PV-adoption
+period for these households, so it didn't add much *new kind* of pattern,
+whereas the no-PV group's much longer recovered history (back to 2020-10)
+gave the model more winters/summers of heat-pump-only behaviour to learn
+from.
 
 Top features by gain, both groups: `horizon`, `rolling_mean_same_timeofday_7d`,
 and `hour` dominate -- the model leans heavily on "what does this specific
@@ -259,41 +278,47 @@ non_pv_group with each one of the 23 features left out in turn (same fixed
 train/test rows as the baseline throughout, so a feature's measured effect
 is only ever about its presence/absence, never a side effect of a different
 row set), and recompute the **portfolio-wide MAPE** from "did grouping help"
-above for each. Baseline (all features): **13.901%**
+below for each. Baseline (all features): **12.644%**
 (`reports/feature_ablation.json`).
 
 | Rank | Feature removed | MAPE | Delta vs. baseline |
 |---|---|---|---|
-| 1 (most costly to remove) | `rolling_mean_same_timeofday_7d` | 14.433% | **+0.532pp** |
-| 2 | `rolling_mean_24h_asof_cutoff` | 14.371% | +0.470pp |
-| 3 | `Precipitation_total_hourly_lag_24h` | 14.079% | +0.178pp |
+| 1 (most costly to remove) | `rolling_mean_24h_asof_cutoff` | 13.317% | **+0.672pp** |
+| 2 | `rolling_mean_same_timeofday_7d` | 13.151% | +0.507pp |
+| 3 | `Precipitation_total_hourly_rolling_mean_24h_asof_cutoff` | 12.847% | +0.203pp |
 | ... | (18 more features, small effects either way) | | |
-| 22 | `lag_24h` | 13.767% | -0.134pp |
-| 23 (most "helpful" to remove) | `horizon` / `DewPoint_hourly_lag_24h` (tied) | 13.758% | **-0.143pp** |
+| 22 | `WindSpeed_hourly_lag_24h` | 12.518% | -0.126pp |
+| 23 (most "helpful" to remove) | `lag_24h` | 12.461% | **-0.183pp** |
 
-Two things stand out. First, the two features that matter by a wide margin
+Two things stand out, consistent with the earlier (smaller-training-window)
+version of this check. First, the two features that matter by a wide margin
 are the target's own recent-history summaries
-(`rolling_mean_same_timeofday_7d`, `rolling_mean_24h_asof_cutoff`) -- removing
-either one costs ~5x more MAPE than any other single feature, confirming
+(`rolling_mean_24h_asof_cutoff`, `rolling_mean_same_timeofday_7d`) -- removing
+either one costs ~3-5x more MAPE than any other single feature, confirming
 that persistence-style information about the target itself is doing most of
 the real work, with weather and calendar features each contributing only a
-little on their own.
+little on their own. (The two swapped rank #1/#2 versus the earlier,
+shorter-training-window version of this check, but remain clearly the top
+two by a wide margin either way.)
 
-Second, and more interesting: **`horizon` tops the "gain" importance ranking
-above, but removing it doesn't hurt -- it's tied for the single best feature
-to drop.** Gain-based importance measures how much a feature was used for
-splits *during training*; it says nothing about whether that usage actually
-helps generalise to the held-out test period. A plausible explanation here:
-`horizon` is highly correlated with (duplicates much of the same ordering
-information as) `hour` and `minute`, so the model leans on it heavily during
-training *as one of several redundant ways to encode time-of-day*, but
-dropping it costs nothing because `hour`/`minute` already carry the same
-signal. A few other features show the same small-negative-delta pattern
-(`DewPoint_hourly_lag_24h`, `lag_24h`, `Sunshine_duration_hourly_
-rolling_mean_24h_asof_cutoff`, `dow`) -- plausibly redundant or mildly
-overfit-prone given everything else already in the model, though none of
-these effects are large enough (all under 0.15pp) to be confident they'd
-replicate on a different test period. The practical takeaway: gain-based
+Second, and more interesting: **`horizon` ranks top-2 in the "gain" importance
+table above, but removing it doesn't hurt at all** (delta -0.065pp, among the
+more "helpful to remove" features, not shown in the table above but see
+`reports/feature_ablation.json`). Gain-based importance measures how much a
+feature was used for splits *during training*; it says nothing about whether
+that usage actually helps generalise to the held-out test period. A plausible
+explanation here: `horizon` is highly correlated with (duplicates much of the
+same ordering information as) `hour` and `minute`, so the model leans on it
+heavily during training *as one of several redundant ways to encode
+time-of-day*, but dropping it costs nothing because `hour`/`minute` already
+carry the same signal. `lag_24h` is the single most "helpful to remove"
+feature this time (-0.183pp) -- plausibly because it's the noisiest, least
+smoothed of the target's own history features, and the model may lean on it
+in ways that don't generalise as well as the smoothed alternatives
+(`rolling_mean_24h_asof_cutoff`, `rolling_mean_same_timeofday_7d`) already
+covering similar ground. None of these negative-delta effects are large
+enough (all under 0.2pp) to be fully confident they'd replicate on a
+different test period, but the practical takeaway holds: gain-based
 importance is a reasonable guide to what the model is *using*, but
 leave-one-out against held-out data is the more trustworthy guide to what
 actually matters if you were deciding which features to keep in a
@@ -304,60 +329,56 @@ simplified/faster model.
 The three model-level rows above aren't directly comparable as-is — each
 model's test window is "that series' own last 20% of days," and the series
 have different stable windows. Re-scoring all three on the **same** common
-test window (from 2023-12-01, the latest of the three start dates) fixes
+test window (from 2023-09-05, the latest of the three start dates) fixes
 that, but raises a second, more important question: *how* do you combine the
 PV and no-PV models' errors into one "grouped approach" number?
 
 **The naive way is wrong, and overstates the error.** Simply adding the two
-groups' own MAE values together (`reports/grouping_comparison.json`'s
+groups' own total-scale MAE values together (`reports/grouping_comparison.json`'s
 `grouped_naive_mae_sum`) implicitly assumes the PV and no-PV groups' forecast
 errors are perfectly correlated -- always wrong in the same direction, by the
 same amount, on the same day. That's not realistic: PV group errors are
 driven substantially by weather-dependent self-consumption variance, while
 no-PV errors come from different noise sources, so day to day the two groups'
 errors partially cancel once you actually add their *bids* together. The
-correct **portfolio-wide error** sums the *predictions* and the *actuals*
-across both groups first, per 15-min step, then scores that one combined
-series -- i.e. it measures what a desk bidding PV + no-PV as a single
-combined position would actually see.
+correct **portfolio-wide error** rescales each group's per-household-average
+prediction back to a kWh total via its own `active_household_count`, sums the
+*predictions* and the *actuals* across both groups first, per 15-min step,
+then scores that one combined series -- i.e. it measures what a desk bidding
+PV + no-PV as a single combined position would actually see.
 
-| Approach | Portfolio MAE (kWh/15min) | RMSE | MAPE | MAE/household |
-|---|---|---|---|---|
-| Single ungrouped model (all 410 households) | 24.19 | 31.60 | 14.0% | 0.0590 |
-| Grouped, **naive MAE sum** (wrong -- see above) | *26.34* | — | — | *0.0643* |
-| Grouped, **portfolio-wide** (correct) | **24.27** | **31.58** | **13.9%** | **0.0592** |
+| Approach | Portfolio MAE (kWh/15min) | RMSE | MAPE |
+|---|---|---|---|
+| Single ungrouped model (all 410 households) | 16.64 | 22.67 | 12.9% |
+| Grouped, **naive MAE sum** (wrong -- see above) | *18.25* | — | — |
+| Grouped, **portfolio-wide** (correct) | **16.45** | **22.57** | **12.6%** |
 
-**With the detector-grown groups, this is now genuinely a near-tie, not a
-clear win either way.** With the surveyed-only groups (131/114 households),
-the portfolio-wide comparison favoured grouping by ~3% on MAE and RMSE; with
-the full detector-grown groups (158/252), MAE is marginally *worse* for
-grouping (24.27 vs 24.19, +0.3%) while RMSE is marginally *better* (31.58 vs
-31.60) and MAPE is marginally better too (13.9% vs 14.0%) -- i.e. the two
-approaches are within noise of each other on every metric, not a meaningful
-win for either side. The naive sum is still clearly the wrong way to compare
-them regardless (26.34, well above both real numbers), so that part of the
-earlier correction stands; what's changed is that growing the groups with
-noisier, detector-inferred labels erased the small edge grouping previously
-had. A plausible explanation: the whole point of grouping is that each
-group is more *homogeneous* in its consumption pattern than the pooled
-population; diluting both groups with ~17% (158's 27) and ~55% (252's 138)
-detector-labelled households -- some fraction of which the detector got
-wrong (§2: ~11% error rate out-of-fold) -- works against that homogeneity,
-pulling the portfolio-wide comparison back toward a wash.
+**With roughly 1-2 extra years of training history (§3), grouping now shows a
+real, consistent edge across every metric again.** The portfolio-wide
+approach beats the single ungrouped model on MAE (16.45 vs 16.64, ~1.1%
+lower), RMSE (22.57 vs 22.67), and MAPE (12.6% vs 12.9%) -- a modest but
+directionally unambiguous win, unlike the near-tie/mixed-signal result from
+the shorter-training-window version of this pipeline. The naive sum is still
+clearly the wrong way to compare them regardless (18.25, well above both real
+numbers). A plausible explanation for why grouping's edge reappeared: more
+training history per group gives each group's model more opportunity to
+learn genuinely group-specific patterns (not just noise), so the
+detector-labelled households' ~11% label-error rate (§2) matters
+proportionally less than it did against a much shorter, noisier-relative-to-
+its-length training window.
 
 Separately from the portfolio-wide total, grouping still clearly pays off for
 **relative accuracy and risk characterisation at the segment level**: the
-pooled model's 13.9% MAPE hides that the PV segment is forecast notably less
-reliably (21.7% MAPE) than the no-PV segment (13.2% MAPE) -- an 8.5-point
-gap, essentially unchanged from the surveyed-only version's 8.1-point gap.
-For day-ahead procurement, that gap matters for risk management regardless
-of which way the portfolio-wide total happens to lean this time -- it tells
-E.ON exactly where forecast risk concentrates (the PV-owning segment, driven
-by weather-dependent self-consumption) and where a wider safety margin / more
-conservative procurement buffer is warranted, which Level 3's uncertainty
-framing would act on directly. A single ungrouped model would never surface
-that, even though it's no longer clearly worse than the grouped approach on
-the portfolio total either.
+pooled model's 12.9% MAPE (common window) hides that the PV segment is
+forecast notably less reliably (21.6% MAPE) than the no-PV segment (11.8%
+MAPE) -- a 9.8-point gap, if anything larger than the previous, shorter-window
+version's 8.5-point gap. For day-ahead procurement, that gap matters for risk
+management on top of the portfolio-wide total now also favouring grouping --
+it tells E.ON exactly where forecast risk concentrates (the PV-owning
+segment, driven by weather-dependent self-consumption) and where a wider
+safety margin / more conservative procurement buffer is warranted, which
+Level 3's uncertainty framing would act on directly. A single ungrouped model
+would never surface that.
 
 ## 5. Summary of simplifications / honesty notes
 
@@ -390,6 +411,12 @@ the portfolio total either.
 - UTC 10–14 is used as a fixed "midday" proxy for all households rather than
   adjusting per household for CET/CEST — a one-hour approximation.
 - No Level 0 baseline existed elsewhere in the repo to compare against; the
-  "all-known ungrouped" model built here serves as that baseline instead.
+  "all-households" ungrouped model built here serves as that baseline instead.
+- The forecasting target is `kWh_mean_per_active_household`, not a raw group
+  sum (§3/§4) -- rescaling predictions back to group/portfolio kWh totals at
+  evaluation time uses the *actual* historical `active_household_count` for
+  each timestamp, which assumes that count (not just the consumption rate)
+  is knowable ahead of the forecast. Realistic for a desk's own contract
+  book; the same kind of simplification as using weather actuals above.
 - One full-day, group-wide data gap (2023-10-29) was found and excluded
   rather than imputed.
