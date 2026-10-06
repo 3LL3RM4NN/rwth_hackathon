@@ -73,14 +73,16 @@ def train_and_evaluate(name: str, n_households: int) -> dict:
     pred = model.predict(test[FEATURE_COLUMNS])
 
     mae = mean_absolute_error(test["y"], pred)
-    rmse = mean_squared_error(test["y"], pred) ** 0.5
+    mse = mean_squared_error(test["y"], pred)
+    rmse = mse ** 0.5
     mape = mean_absolute_percentage_error(test["y"], pred)
 
     count = test["active_household_count"]
     y_total = test["y"] * count
     pred_total = pred * count
     mae_total = mean_absolute_error(y_total, pred_total)
-    rmse_total = mean_squared_error(y_total, pred_total) ** 0.5
+    mse_total = mean_squared_error(y_total, pred_total)
+    rmse_total = mse_total ** 0.5
 
     print(
         f"Training quantile models ({LOWER_QUANTILE:.0%}/{UPPER_QUANTILE:.0%}, "
@@ -113,9 +115,11 @@ def train_and_evaluate(name: str, n_households: int) -> dict:
         "train_origin_range": [str(train["origin"].min()), str(train["origin"].max())],
         "test_origin_range": [str(test["origin"].min()), str(test["origin"].max())],
         "mae_per_household": float(mae),
+        "mse_per_household": float(mse),
         "rmse_per_household": float(rmse),
         "mape": float(mape),
         "mae_total": float(mae_total),
+        "mse_total": float(mse_total),
         "rmse_total": float(rmse_total),
         "naive_mae_per_household": float(naive_mae),
         "naive_mae_total": float(naive_mae_total),
@@ -158,9 +162,11 @@ if __name__ == "__main__":
         print(f"test period: {res['test_origin_range']}")
         print(
             f"MAE/household={res['mae_per_household']:.4f} kWh/15min  "
-            f"RMSE/household={res['rmse_per_household']:.4f}  MAPE={res['mape']*100:.1f}%"
+            f"MSE/household={res['mse_per_household']:.4f}  RMSE/household={res['rmse_per_household']:.4f}  "
+            f"MAPE={res['mape']*100:.1f}%"
         )
-        print(f"MAE (rescaled to group total)={res['mae_total']:.2f} kWh/15min")
+        print(f"MAE (rescaled to group total)={res['mae_total']:.2f} kWh/15min  "
+              f"MSE (rescaled)={res['mse_total']:.2f}")
         print(f"naive (same 15-min-of-day, last week) MAE/household={res['naive_mae_per_household']:.4f} kWh/15min")
         print(
             f"{res['nominal_coverage']*100:.0f}% prediction interval: PICP={res['picp']*100:.1f}%  "
@@ -175,6 +181,7 @@ if __name__ == "__main__":
             for label, key, fmt in [
                 ("MAPE (%)", "mape", lambda v: v * 100),
                 ("MAE/household", "mae_per_household", lambda v: v),
+                ("MSE/household", "mse_per_household", lambda v: v),
                 ("RMSE/household", "rmse_per_household", lambda v: v),
                 ("PICP (%)", "picp", lambda v: v * 100),
                 ("mean interval width/hh", "mean_interval_width_per_household", lambda v: v),

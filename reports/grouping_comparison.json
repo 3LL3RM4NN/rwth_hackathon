@@ -3,27 +3,33 @@
     "n_households": 158,
     "n_rows": 16416,
     "mae_per_household": 0.05436649371785858,
+    "mse_per_household": 0.0054553225304232525,
     "rmse_per_household": 0.07386015522880555,
     "mape": 0.21597180800834798,
     "mae_total": 8.1213790878439,
+    "mse_total": 122.04478457011601,
     "rmse_total": 11.047388133405832
   },
   "non_pv_group": {
     "n_households": 252,
     "n_rows": 16416,
     "mae_per_household": 0.043039823300238665,
+    "mse_per_household": 0.0034546695451662087,
     "rmse_per_household": 0.05877643698937703,
     "mape": 0.11789200562118426,
     "mae_total": 10.123922262410888,
+    "mse_total": 190.97276169430373,
     "rmse_total": 13.819289478634701
   },
   "all_households_group": {
     "n_households": 410,
     "n_rows": 16416,
     "mae_per_household": 0.04325678280210857,
+    "mse_per_household": 0.0034693535636974157,
     "rmse_per_household": 0.058901218694500844,
     "mape": 0.12865288208069672,
     "mae_total": 16.642592911322435,
+    "mse_total": 513.9403924099419,
     "rmse_total": 22.670253470350566
   },
   "grouped_naive_mae_sum": {
@@ -34,6 +40,7 @@
     "n_households": 410,
     "n_rows": 16416,
     "mae_total": 16.45318342653546,
+    "mse_total": 509.2614566442633,
     "rmse_total": 22.566822032449835,
     "mape": 0.1264401833447981
   },
