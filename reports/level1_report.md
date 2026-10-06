@@ -252,6 +252,53 @@ quarter-hour of the day typically look like" now that weather is both
 leakage-free *and* possibly up to 36h stale by the time it's used (full
 tables in `reports/forecast_metrics.json`).
 
+### Feature ablation: does "gain" importance match real impact?
+
+`src/feature_ablation.py` checks that directly: retrain pv_group and
+non_pv_group with each one of the 23 features left out in turn (same fixed
+train/test rows as the baseline throughout, so a feature's measured effect
+is only ever about its presence/absence, never a side effect of a different
+row set), and recompute the **portfolio-wide MAPE** from "did grouping help"
+above for each. Baseline (all features): **13.901%**
+(`reports/feature_ablation.json`).
+
+| Rank | Feature removed | MAPE | Delta vs. baseline |
+|---|---|---|---|
+| 1 (most costly to remove) | `rolling_mean_same_timeofday_7d` | 14.433% | **+0.532pp** |
+| 2 | `rolling_mean_24h_asof_cutoff` | 14.371% | +0.470pp |
+| 3 | `Precipitation_total_hourly_lag_24h` | 14.079% | +0.178pp |
+| ... | (18 more features, small effects either way) | | |
+| 22 | `lag_24h` | 13.767% | -0.134pp |
+| 23 (most "helpful" to remove) | `horizon` / `DewPoint_hourly_lag_24h` (tied) | 13.758% | **-0.143pp** |
+
+Two things stand out. First, the two features that matter by a wide margin
+are the target's own recent-history summaries
+(`rolling_mean_same_timeofday_7d`, `rolling_mean_24h_asof_cutoff`) -- removing
+either one costs ~5x more MAPE than any other single feature, confirming
+that persistence-style information about the target itself is doing most of
+the real work, with weather and calendar features each contributing only a
+little on their own.
+
+Second, and more interesting: **`horizon` tops the "gain" importance ranking
+above, but removing it doesn't hurt -- it's tied for the single best feature
+to drop.** Gain-based importance measures how much a feature was used for
+splits *during training*; it says nothing about whether that usage actually
+helps generalise to the held-out test period. A plausible explanation here:
+`horizon` is highly correlated with (duplicates much of the same ordering
+information as) `hour` and `minute`, so the model leans on it heavily during
+training *as one of several redundant ways to encode time-of-day*, but
+dropping it costs nothing because `hour`/`minute` already carry the same
+signal. A few other features show the same small-negative-delta pattern
+(`DewPoint_hourly_lag_24h`, `lag_24h`, `Sunshine_duration_hourly_
+rolling_mean_24h_asof_cutoff`, `dow`) -- plausibly redundant or mildly
+overfit-prone given everything else already in the model, though none of
+these effects are large enough (all under 0.15pp) to be confident they'd
+replicate on a different test period. The practical takeaway: gain-based
+importance is a reasonable guide to what the model is *using*, but
+leave-one-out against held-out data is the more trustworthy guide to what
+actually matters if you were deciding which features to keep in a
+simplified/faster model.
+
 ### Did grouping actually help?
 
 The three model-level rows above aren't directly comparable as-is — each

@@ -46,6 +46,7 @@ python3 -m src.pv_features    # per-household PV-pattern features -> reports/pv_
 python3 -m src.pv_detection   # classifier vs surveyed PV flag -> reports/pv_detect*.{csv,json}
 python3 -m src.aggregate      # 15-min group aggregates (PV / non-PV / combined) -> reports/*_15min.csv
 python3 -m src.forecast       # LightGBM day-ahead model per group, 15-min steps -> reports/forecast_metrics.json, grouping_comparison.json
+python3 -m src.feature_ablation  # optional: leave-one-feature-out impact on portfolio-wide MAPE -> reports/feature_ablation.json
 ```
 
 - `src/data_loading.py` — all raw-CSV readers (households/meta/overview/weather/15-min);
@@ -83,6 +84,13 @@ python3 -m src.forecast       # LightGBM day-ahead model per group, 15-min steps
   per-day groupby either). Same-day weather *actuals* are never used as a forecast
   stand-in (an earlier version of this pipeline did that as a brief-sanctioned
   simplification; that's a real fix now, not just a disclosed shortcut).
+- `src/feature_ablation.py` — leave-one-feature-out check against the "Grouped,
+  portfolio-wide" MAPE from `forecast.py`'s own grouped-vs-ungrouped comparison: retrains
+  pv_group/non_pv_group with each of `FEATURE_COLUMNS` dropped in turn (same fixed
+  train/test rows throughout) and reports the MAPE delta. Notably, gain-based feature
+  importance and this held-out leave-one-out impact disagree for a few features (e.g.
+  `horizon` ranks top by gain but costs nothing to remove) — see the report's "Feature
+  ablation" subsection in §4.
 
 Full write-up of methodology, results, and known simplifications: `reports/level1_report.md`.
 ProLoaF (the brief's primary choice) was not installed/used — installing its setup code

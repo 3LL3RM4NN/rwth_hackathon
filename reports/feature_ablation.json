@@ -1,0 +1,98 @@
+{
+  "common_test_window_start": "2023-12-01 00:00:00+00:00",
+  "baseline_mape": 0.13901023232796492,
+  "mape_by_feature_removed": {
+    "rolling_mean_same_timeofday_7d": {
+      "mape": 0.1443290137101745,
+      "delta_pp": 0.5318781382209592
+    },
+    "rolling_mean_24h_asof_cutoff": {
+      "mape": 0.14371191436749164,
+      "delta_pp": 0.4701682039526728
+    },
+    "Precipitation_total_hourly_lag_24h": {
+      "mape": 0.1407892636252424,
+      "delta_pp": 0.17790312972774946
+    },
+    "month": {
+      "mape": 0.1403927566283752,
+      "delta_pp": 0.1382524300410276
+    },
+    "Humidity_avg_hourly_rolling_mean_24h_asof_cutoff": {
+      "mape": 0.1403291621638716,
+      "delta_pp": 0.13189298359066737
+    },
+    "lag_48h": {
+      "mape": 0.14015038242057404,
+      "delta_pp": 0.11401500926091213
+    },
+    "Sunshine_duration_hourly_lag_24h": {
+      "mape": 0.13993089703949943,
+      "delta_pp": 0.09206647115345135
+    },
+    "Humidity_avg_hourly_lag_24h": {
+      "mape": 0.139579445143488,
+      "delta_pp": 0.05692128155230791
+    },
+    "Temperature_avg_hourly_rolling_mean_24h_asof_cutoff": {
+      "mape": 0.13947004772275673,
+      "delta_pp": 0.045981539479181266
+    },
+    "Temperature_avg_hourly_lag_24h": {
+      "mape": 0.1392636630808346,
+      "delta_pp": 0.02534307528696822
+    },
+    "DewPoint_hourly_rolling_mean_24h_asof_cutoff": {
+      "mape": 0.13925963108047895,
+      "delta_pp": 0.02493987525140351
+    },
+    "minute": {
+      "mape": 0.1391417670045197,
+      "delta_pp": 0.013153467655477313
+    },
+    "WindSpeed_hourly_lag_24h": {
+      "mape": 0.13901707414187167,
+      "delta_pp": 0.0006841813906754979
+    },
+    "hour": {
+      "mape": 0.13901172010646878,
+      "delta_pp": 0.00014877785038669433
+    },
+    "is_weekend": {
+      "mape": 0.13901023232796492,
+      "delta_pp": 0.0
+    },
+    "lag_168h": {
+      "mape": 0.13900027663933748,
+      "delta_pp": -0.0009955688627438786
+    },
+    "Precipitation_total_hourly_rolling_mean_24h_asof_cutoff": {
+      "mape": 0.13899692668499825,
+      "delta_pp": -0.0013305642966671138
+    },
+    "dow": {
+      "mape": 0.13859796566524912,
+      "delta_pp": -0.04122666627157934
+    },
+    "WindSpeed_hourly_rolling_mean_24h_asof_cutoff": {
+      "mape": 0.1383910896001982,
+      "delta_pp": -0.061914272776672497
+    },
+    "Sunshine_duration_hourly_rolling_mean_24h_asof_cutoff": {
+      "mape": 0.13832773694781816,
+      "delta_pp": -0.06824953801467526
+    },
+    "lag_24h": {
+      "mape": 0.13767469778353256,
+      "delta_pp": -0.13355345444323596
+    },
+    "DewPoint_hourly_lag_24h": {
+      "mape": 0.1375837573372946,
+      "delta_pp": -0.14264749906703067
+    },
+    "horizon": {
+      "mape": 0.137575673818593,
+      "delta_pp": -0.14345585093719082
+    }
+  }
+}
