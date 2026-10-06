@@ -174,6 +174,25 @@ We added three groups of features that use only past data, and tested them on Li
 
 **Result on the test year:** LightGBM 14.51% → **14.07%**, CatBoost 14.28% → **14.12%**.
 
+### The 8 features that improved LightGBM ("recent consumption shape")
+
+LightGBM v2 keeps all 24 original features and adds these 8. All of them use only data available by the cutoff (end of the day before yesterday).
+
+| Feature | What it is | Why it helps |
+|---|---|---|
+| `last6h` | Average consumption in the **last 6 hours** available (the evening of 2 days before) | Freshest signal about the house's current level |
+| `morning_dm2` | Average consumption 06:00–11:00, 2 days before | The household's current morning routine |
+| `evening_dm2` | Average consumption 17:00–21:00, 2 days before | Evening peak level, the most expensive hours to get wrong |
+| `lag_21` | Same hour, **3 weeks** earlier | Extends the weekly pattern (1 and 2 weeks were already included) |
+| `lag_28` | Same hour, **4 weeks** earlier | Same, one week further back |
+| `same_wd_mean` | Average of the same hour on the **same weekday** over the last 1–4 weeks | A stable "typical Tuesday 18:00" for this house, less noisy than a single week |
+| `n_obs_7d` | Number of hours the house reported in the last 7 days | Tells the model how much to trust the other history features |
+| `diff_dm2_dm9` | Daily level 2 days before minus the same weekday one week earlier | Trend: is the house using more or less than last week (cold snap, holiday, away)? |
+
+In short, the original model knew the house's past at a few fixed points. These features add what the house has been doing **most recently** and its **typical weekday pattern**.
+
+The weather-persistence and peer-group features are implemented in `utils/features_extra.py` but are not used by the final model.
+
 **Caveat:** the test year had already been seen when we designed these features, so this is an exploratory follow-up, not an independent test.
 
 ## 8. Run
