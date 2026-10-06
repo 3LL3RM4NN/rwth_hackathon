@@ -332,6 +332,56 @@ widening the quantiles until PICP looked good, is the point -- that would
 just be fitting the evaluation metric instead of fixing the underlying
 model.
 
+### Alternative model: CatBoost
+
+`src/catboost_forecast.py` reruns the exact same pipeline -- same
+`build_supervised_table`/`chronological_split`/`FEATURE_COLUMNS`/`TARGET`
+from `forecast.py`, same train/test rows, same point + 90%-quantile-interval
+metrics -- swapping only the model family, to see whether LightGBM's results
+above are an artifact of that specific library or hold up against a second
+gradient-boosting implementation. CatBoost's hyperparameters were chosen to
+roughly match LightGBM's capacity (`iterations=400`, `depth=5` i.e. up to 32
+leaves vs. LightGBM's `num_leaves=31`, same `learning_rate=0.05`,
+`min_data_in_leaf=20` vs. `min_child_samples=20`) rather than independently
+tuned -- this is a fair-ish out-of-the-box comparison, not a claim that
+either library is better once properly tuned.
+
+| Group | Metric | LightGBM | CatBoost | Delta |
+|---|---|---|---|---|
+| PV | MAPE | 21.6% | 22.2% | +0.64pp |
+| PV | MAE/household | 0.0544 | 0.0546 | +0.0003 |
+| PV | PICP (90% nominal) | 73.9% | **81.1%** | **+7.3pp** |
+| No-PV | MAPE | 11.0% | 11.3% | +0.34pp |
+| No-PV | MAE/household | 0.0347 | 0.0354 | +0.0007 |
+| No-PV | PICP (90% nominal) | 79.8% | **86.1%** | **+6.3pp** |
+| All-households | MAPE | 11.9% | 12.3% | +0.38pp |
+| All-households | MAE/household | 0.0328 | 0.0337 | +0.0009 |
+| All-households | PICP (90% nominal) | 85.0% | **89.7%** | **+4.7pp** |
+
+**Two different findings depending on which metric you look at.** On raw
+point-forecast accuracy, LightGBM is consistently a little better than
+CatBoost across all three groups -- MAPE worse by 0.3-0.6 percentage points,
+MAE/household worse by under 0.001 kWh/15min -- small but completely
+consistent in direction, so this isn't noise. But on **uncertainty
+calibration, CatBoost is clearly better**: PICP improves by 4.7-7.3
+percentage points in every group, and for all-households it lands at 89.7%
+against the 90% nominal target -- essentially perfectly calibrated,
+out of the box, with no tuning. This does come at the cost of wider
+intervals (mean width up ~15-18% relative), which is part of *why* coverage
+improves -- but the gap-to-nominal closes by far more than the width grows
+(e.g. all-households: the 5.0-point coverage gap shrinks to 0.3 points, a
+~94% reduction, for an 18% wider interval), so this isn't just "wider is
+trivially better," it's a genuinely better-calibrated quantile model for
+this data.
+
+The practical takeaway: neither model is a strict winner. If the point
+forecast itself is what matters most (e.g. feeding a single bid number),
+LightGBM's small-but-consistent MAPE edge makes it the better default here.
+If the prediction interval is what actually gets used for risk management
+(Level 3's whole point), CatBoost's much better out-of-the-box calibration
+is the more important property, and would be worth the small point-accuracy
+cost. Full per-group metrics: `reports/forecast_metrics_catboost.json`.
+
 ### Feature ablation: does "gain" importance match real impact?
 
 `src/feature_ablation.py` checks that directly: retrain pv_group and
@@ -496,3 +546,7 @@ would never surface that.
   book; the same kind of simplification as using weather actuals above.
 - One full-day, group-wide data gap (2023-10-29) was found and excluded
   rather than imputed.
+- The CatBoost comparison (§4) uses hyperparameters chosen to roughly match
+  LightGBM's capacity, not independently tuned for either library -- a
+  fair-ish out-of-the-box comparison, not a claim that either model is
+  better once properly tuned.

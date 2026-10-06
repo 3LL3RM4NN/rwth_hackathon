@@ -15,7 +15,8 @@ dependencies = [
     "scikit-learn (>=1.8.0,<2.0.0)",
     "jupyterlab (>=4.5.1,<5.0.0)",
     "seaborn (>=0.13.2,<0.14.0)",
-    "lightgbm (>=4.7.0,<5.0.0)"
+    "lightgbm (>=4.7.0,<5.0.0)",
+    "catboost (>=1.2.10,<2.0.0)"
 ]
 
 # Not an installable/distributed package (there's no "utils" module matching

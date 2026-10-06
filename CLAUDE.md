@@ -53,6 +53,7 @@ python3 -m src.pv_detection   # classifier vs surveyed PV flag -> reports/pv_det
 python3 -m src.aggregate      # 15-min group aggregates (PV / non-PV / combined) -> reports/*_15min.csv
 python3 -m src.forecast       # LightGBM day-ahead model per group, 15-min steps -> reports/forecast_metrics.json, grouping_comparison.json
 python3 -m src.feature_ablation  # optional: leave-one-feature-out impact on portfolio-wide MAPE -> reports/feature_ablation.json
+python3 -m src.catboost_forecast  # optional: same pipeline with CatBoost instead of LightGBM -> reports/forecast_metrics_catboost.json
 ```
 
 - `src/data_loading.py` — all raw-CSV readers (households/meta/overview/weather/15-min);
@@ -110,6 +111,14 @@ python3 -m src.feature_ablation  # optional: leave-one-feature-out impact on por
   importance and this held-out leave-one-out impact disagree for a few features (e.g.
   `horizon` ranks top by gain but costs nothing to remove) — see the report's "Feature
   ablation" subsection in §4.
+- `src/catboost_forecast.py` — reruns `forecast.py`'s exact pipeline (same data prep,
+  features, train/test split, point + quantile-interval metrics) with `CatBoostRegressor`
+  instead of `LGBMRegressor`, hyperparameters chosen to roughly match LightGBM's capacity
+  (not independently tuned), for a direct model-family comparison -> prints a per-group
+  LightGBM-vs-CatBoost table and writes `reports/forecast_metrics_catboost.json`.
+  LightGBM wins slightly on point accuracy (MAPE) in every group; CatBoost's quantile
+  intervals are notably better calibrated (PICP 4.7-7.3pp closer to the 90% nominal
+  target) — see the report's "Alternative model: CatBoost" subsection in §4.
 
 Full write-up of methodology, results, and known simplifications: `reports/report.md`.
 ProLoaF (the brief's primary choice) was not installed/used — installing its setup code
