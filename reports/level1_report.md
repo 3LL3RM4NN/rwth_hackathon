@@ -100,9 +100,7 @@ the 165 households that were never surveyed (`src/aggregate.py`'s
 **252 no-PV households** (114 surveyed + 138 detected) -- all 410 households
 on disk now land in one group or the other, none excluded. This is a
 deliberate change from an earlier version of this pipeline, which excluded
-all 165 unsurveyed households from both groups entirely; seeing whether that
-actually changes the forecasting conclusions is exactly the point of doing
-it (see §4's "did grouping help" discussion -- the answer changes).
+all 165 unsurveyed households from both groups entirely.
 
 **Resolution: upsample weather, not downsample consumption.** Smart-meter
 consumption is native 15-minute resolution; weather is hourly. An earlier
@@ -322,9 +320,8 @@ the portfolio total either.
   version of this pipeline excluded all 165 from both groups entirely). The
   detector's own validation accuracy (89.4%, §2) is the ceiling on how clean
   those 165 households' group assignments actually are -- roughly 1 in 9 of
-  them is plausibly mislabelled by group, which is exactly the kind of noise
-  §4's "did grouping help" analysis found working against grouping's benefit
-  once applied at scale.
+  them is plausibly mislabelled by group (see §4 for how that interacts with
+  the grouping results).
 - Weather inputs to the forecasting model (§4) are lag/rolling features
   (`_lag_24h`, `_rolling_mean_24h_asof_cutoff`) only, anchored to the same
   11:45-the-day-before cutoff as the target series — same-day weather
