@@ -1,14 +1,6 @@
 """Day-ahead, group-level forecasting model (LightGBM), built on the
 15-minute-resolution aggregates from ``src/aggregate.py``.
 
-ProLoaF (the LSTM encoder-decoder engine the task brief asks for primarily) was
-not installed in this environment: pulling and executing its setup code from
-`git+https://github.com/sogno-platform/proloaf.git` was declined for this
-sandboxed session (installing arbitrary code from an agent-chosen external repo
-needs explicit user approval, and the user chose the documented fallback
-instead). LightGBM gradient boosting is used in its place, as the task brief
-explicitly allows.
-
 Forecast setup
 --------------
 A forecast is "issued" at ``origin`` = midnight UTC of day D+1, using only data
@@ -23,12 +15,16 @@ leaks future information for h=20. Anchoring every lag to t (not to origin) at
 >=96 steps keeps every lag strictly inside day D or earlier for every horizon
 -- the same argument as before, just re-scaled from hours to 15-min steps.
 
-Weather is the one deliberate exception/simplification: there is no day-ahead
-weather *forecast* in this dataset, so same-day weather *actuals* at the
-target timestamp t are used as a stand-in, per the task brief (and
+Weather is held to the exact same no-leakage rule as the target series: there
+is no day-ahead weather *forecast* in this dataset, and same-day weather
+*actuals* at the target timestamp are not used as a stand-in for one (that
+would leak information not actually available at forecast time). Instead,
+each weather column gets the same lag_24h / rolling_mean_24_48 treatment as
+the target -- i.e. "yesterday, same time" and "yesterday's daily average" --
+which is the same kind of persistence assumption a naive day-ahead weather
+forecast would make, not a shortcut around the leakage rule.
 ``aggregate.py``'s own linear-interpolation-to-15min simplification for that
-weather data is inherited here). This is a known source of optimism in the
-reported accuracy and is called out again in the report.
+weather data is still inherited here.
 
 Feature construction below is fully vectorised (no per-row Python loop): since
 ``origin`` is always just ``t.normalize()`` (midnight of t's own calendar day)
@@ -93,8 +89,14 @@ def build_supervised_table(df: pd.DataFrame) -> pd.DataFrame:
     )
     table["rolling_mean_same_timeofday_7d"] = same_timeofday.mean(axis=1, skipna=True)
 
+    # Weather gets the same no-leakage lag/rolling treatment as the target --
+    # same-day actuals are never used (see module docstring).
     for feat in WEATHER_FEATURES:
-        table[feat] = df[feat]
+        base = df[feat]
+        table[f"{feat}_lag_24h"] = base.shift(LAG_STEPS["lag_24h"])
+        table[f"{feat}_rolling_mean_24_48"] = (
+            base.shift(ROLLING_WINDOW_STEPS).rolling(ROLLING_WINDOW_STEPS).mean()
+        )
 
     table["origin"] = idx.normalize()
     table["target_time"] = idx
@@ -120,10 +122,14 @@ def chronological_split(table: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame
     return train, test
 
 
+WEATHER_FEATURE_COLUMNS = [f"{feat}_lag_24h" for feat in WEATHER_FEATURES] + [
+    f"{feat}_rolling_mean_24_48" for feat in WEATHER_FEATURES
+]
+
 FEATURE_COLUMNS = (
     list(LAG_STEPS.keys())
     + ["rolling_mean_24_48", "rolling_mean_same_timeofday_7d"]
-    + WEATHER_FEATURES
+    + WEATHER_FEATURE_COLUMNS
     + ["hour", "minute", "dow", "month", "is_weekend", "horizon"]
 )
 

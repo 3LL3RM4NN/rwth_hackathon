@@ -179,13 +179,22 @@ row, so this was also a needed performance fix, not just a style preference:
 the full 3-group pipeline runs in ~7s now, down from ~28s at hourly despite
 processing 4x as many rows.)
 
-**Known simplification (weather):** there is no day-ahead weather *forecast*
-in this dataset, so same-day weather **actuals** at the target timestamp are
-used as a stand-in, as explicitly sanctioned by the brief (and now also
-inherits §3's weather-interpolation simplification for the two cumulative
-columns). This inflates reported accuracy versus a deployment using real
-forecasts and is the single biggest external-validity caveat on the numbers
-below.
+**Weather is no longer a leakage shortcut.** An earlier version of this
+pipeline used same-day weather **actuals** at the target timestamp as a
+stand-in for an unavailable day-ahead forecast, as the brief explicitly
+sanctions as a fallback -- but that's still same-day information the model
+wouldn't actually have at forecast time. Weather inputs now get the exact
+same treatment as the target series itself: `<feat>_lag_24h` ("yesterday,
+same time") and `<feat>_rolling_mean_24_48` ("yesterday's daily average"),
+both ≥24h/96 steps old and therefore always available at origin time for
+every horizon, by the same argument as the target's own lag features above.
+This is the same kind of persistence assumption an actual naive day-ahead
+weather forecast would make, not a shortcut around the leakage rule --
+and it still inherits §3's interpolation-to-15min simplification for the two
+cumulative columns. Accuracy drops as a direct, expected result (see Results
+below) since the model loses genuinely-predictive same-day information
+(especially sunshine duration for the PV group) it was never entitled to use;
+the numbers below are the honest ones.
 
 **Split:** chronological by whole origin-day, 80% train / 20% test (never
 split within a day).
@@ -199,25 +208,36 @@ actually be distinguished.
 
 ### Results
 
-Units are now **kWh per 15-min interval** (not kWh/h as in the earlier
-hourly version — compare only within this table, not against old numbers
-without converting).
+Units are **kWh per 15-min interval**. These numbers supersede an earlier,
+more optimistic set that used same-day weather actuals as input (see above) --
+don't compare across the two without accounting for that.
 
 | Group | Households | Test period | MAE (kWh/15min) | RMSE | MAPE | MAE/household | Naive (same 15-min-of-day, last week) MAE |
 |---|---|---|---|---|---|---|---|
-| PV | 131 | 2023-12-01 → 2024-02-27 | 8.24 | 10.15 | **16.1%** | 0.0629 | 13.78 |
-| No-PV | 114 | 2023-10-13 → 2024-02-27 | 4.07 | 5.12 | **9.3%** | 0.0357 | 9.68 |
-| All-known (ungrouped) | 245 | 2023-11-27 → 2024-02-27 | 10.93 | 13.51 | 10.5% | 0.0446 | 23.49 |
+| PV | 131 | 2023-12-01 → 2024-02-27 | 9.02 | 11.58 | **19.9%** | 0.0688 | 13.78 |
+| No-PV | 114 | 2023-10-13 → 2024-02-27 | 5.89 | 7.45 | **13.6%** | 0.0517 | 9.68 |
+| All-known (ungrouped) | 245 | 2023-11-27 → 2024-02-27 | 13.85 | 17.70 | 14.0% | 0.0565 | 23.49 |
 
-Both grouped models beat the naive "same 15-min-of-day, same weekday, last
-week" baseline by roughly 1.7–2.4x on MAE, so the LightGBM models are learning
-real structure, not just leaning on calendar regularity -- essentially
-unchanged from the hourly version's finding.
+Both grouped models still beat the naive "same 15-min-of-day, same weekday,
+last week" baseline, but by a smaller margin than before (~1.5–1.7x on MAE,
+down from ~1.7–2.4x) -- expected, since the naive baseline never had access
+to same-day weather either, so removing it from the LightGBM model closes
+part of that gap. The models are still learning real structure beyond pure
+calendar regularity, just less of an edge over the naive baseline than the
+leaky version suggested.
 
-Top features by gain, both groups: `hour`, `rolling_mean_24_48`,
-`Temperature_avg_hourly`, `lag_24h` — i.e. time-of-day, recent history, and
-temperature dominate, with `minute` and sunshine/precipitation/wind well
-behind (full tables in `reports/forecast_metrics.json`).
+Top features by gain, both groups, shifted substantially from the leaky
+version: the top 7 features for both groups are now all `*_rolling_mean_24_48`
+weather columns (`WindSpeed_hourly`, `Humidity_avg_hourly`,
+`Sunshine_duration_hourly`, ...), ranking above even the target's own
+`rolling_mean_24_48` and `lag_24h` -- the smoothed, day-old weather signal is
+more useful than any single noisier `_lag_24h` weather point. `hour` has
+fallen from a top-4 feature (leaky version) to near the bottom, and `minute`
+is essentially unused (full tables in `reports/forecast_metrics.json`). This
+makes sense: with same-day weather removed, "hour of day" alone carries much
+less information about PV-driven midday suppression than it used to, since
+that signal was previously coming through the (leaked) same-day sunshine
+value, not the clock time itself.
 
 ### Did grouping actually help?
 
@@ -229,28 +249,30 @@ windows. Re-scoring all three on the **same** common test window (from
 
 | Approach | MAE/household | MAPE |
 |---|---|---|
-| Single ungrouped model (all 245 households) | **0.0449** | 10.6% |
-| Grouped (PV model + no-PV model, summed) | 0.0497 | PV 16.1% / No-PV 8.2% |
+| Single ungrouped model (all 245 households) | **0.0564** | 14.0% |
+| Grouped (PV model + no-PV model, summed) | 0.0619 | PV 19.9% / No-PV 13.2% |
 
-**Honest finding, unchanged from the hourly version:** on raw per-household
-MAE, grouping is a wash — slightly *worse* than a single pooled model (0.0497
-vs 0.0449 kWh/15min/household). This is expected: summing 245 households into
-one series averages out more idiosyncratic noise than summing 131 or 114, so
-the pooled series is statistically "smoother" and easier to hit on absolute
-error alone.
+**Honest finding, unchanged in direction from both earlier versions:** on raw
+per-household MAE, grouping is still a wash — slightly *worse* than a single
+pooled model (0.0619 vs 0.0564 kWh/15min/household). This is expected:
+summing 245 households into one series averages out more idiosyncratic noise
+than summing 131 or 114, so the pooled series is statistically "smoother" and
+easier to hit on absolute error alone.
 
 Where grouping clearly does pay off is **relative accuracy and risk
-characterisation**: the pooled model's 10.6% MAPE hides that the PV segment
-is forecast far less reliably (16.1% MAPE) than the no-PV segment (8.2%
+characterisation**: the pooled model's 14.0% MAPE hides that the PV segment
+is forecast far less reliably (19.9% MAPE) than the no-PV segment (13.2%
 MAPE). For day-ahead procurement, that gap matters more than the pooled
 headline number — it tells E.ON exactly where forecast risk concentrates
 (the PV-owning segment, driven by weather-dependent self-consumption) and
 where a wider safety margin / more conservative procurement buffer is
 warranted, which Level 3's uncertainty framing would act on directly. A
-single ungrouped model would never surface that. (These conclusions and
-magnitudes are essentially identical to the earlier hourly version of this
-pipeline -- the resolution change affected the units and the model's absolute
-error scale, not which modeling decisions it favours.)
+single ungrouped model would never surface that. (This conclusion is
+unchanged across all three versions of this pipeline -- hourly with leaky
+weather, 15-min with leaky weather, and now 15-min with leakage-free weather
+-- only the absolute error magnitudes shift; the PV-vs-no-PV gap in *relative*
+terms is a robust finding, not an artifact of any one resolution/weather
+choice.)
 
 ## 5. Summary of simplifications / honesty notes
 
@@ -258,8 +280,13 @@ error scale, not which modeling decisions it favours.)
 - Forecasting groups use the *surveyed* PV flag, not the detector's labels;
   165 unsurveyed households are excluded from both forecasting groups
   entirely (not split into a third "unknown" group).
-- Weather is same-day **actuals** standing in for an unavailable day-ahead
-  forecast — reported accuracy is optimistic relative to real deployment.
+- Weather inputs to the forecasting model (§4) are now lag/rolling features
+  (`_lag_24h`, `_rolling_mean_24_48`) only, with the same ≥24h/96-step
+  no-leakage cutoff as the target series — same-day weather actuals are
+  **not** used as a forecast stand-in. (An earlier version of this pipeline
+  did use same-day actuals, as the brief explicitly sanctions as a fallback;
+  that's no longer the case here, and accuracy dropped as a direct,
+  honestly-reported result of removing that leakage -- see §4.)
 - Weather is upsampled from hourly to 15-min via linear interpolation (§3);
   for the two cumulative columns (precipitation, sunshine duration) this
   treats an hourly total/duration as if it were a smoothly-varying
