@@ -72,23 +72,19 @@ than the zero-shot foundation models or the naive same-hour-last-week baseline (
 signal the feature-ablation study in `reports/report.md` identifies as the dominant
 driver of model accuracy.
 
-## Outlook: portfolio-level modeling (`PORTFOLIO_MODEL.md`, branch `johannes_l2`)
+## Outlook: household-level model, evaluated at portfolio level (branch `johannes_l2`)
 
-A parallel branch explores training directly on the **portfolio total** instead of
-per-household series:
+1. **Forecast target:** This model predicts the next-day consumption of **each
+   household** rather than that of the total portfolio.
 
-1. **Forecast target** — this repo's models predict each group's per-household average
-   (effectively household-level); the portfolio model instead predicts **only the total
-   portfolio load** directly.
-2. **Training objective** — rather than learning and aggregating household-level
-   errors, it directly minimizes the squared error of the portfolio total itself,
-   Σ(d,h) (Y[d,h] − Ŷ[d,h])², over θ.
-3. **Trade-off** — household-level modeling (this branch's approach) keeps individual
-   forecasts and flexibility (e.g. the PV-vs-No-PV risk breakdown above); direct
-   portfolio modeling drops that granularity in exchange for optimizing exactly the
-   number a day-ahead procurement desk actually bids on.
+2. **Training objective:** This model learns household-level errors; the portfolio model
+   directly minimizes:
 
-Combining the two is a natural next step: use the grouped/per-household approach for
-risk characterization (where does forecast error concentrate?) and a direct
-portfolio-objective model for the bid number itself, then compare them on the same
-portfolio-wide metrics this report already uses.
+   $$
+   \min_\theta \sum_{d,h}(Y_{d,h}-\hat Y_{d,h})^2
+   $$
+
+3. **Main trade-off:** Household-level modeling provides individual forecasts and
+   flexibility; direct portfolio modeling focuses exclusively on **overall procurement
+   accuracy**. Summed to the portfolio, the household-level model with a squared-error
+   objective reaches **bias +3.1 % and MAPE 8.4 %**.
