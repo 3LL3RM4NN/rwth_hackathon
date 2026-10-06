@@ -77,6 +77,22 @@ The portfolio total in each hour is summed over the households whose meters repo
 
 ## 5. Results (test year, portfolio of 255 households)
 
+### Summary (models shown in the plots)
+
+| Model | Family | Portfolio error (nMAE) | Coverage 10–90 (target 80%) |
+|---|---|---|---|
+| **LightGBM** | Tree model | **14.07%** | 76% |
+| CatBoost | Tree model | 14.12% | 77% |
+| Toto 2.0 | Pretrained AI model (no training on our data) | 14.88% | 78% |
+| Chronos-2 | Pretrained AI model (no training on our data) | 16.95% | 76% |
+| Same hour last week | Simple rule (baseline) | 20.42% | 77% |
+
+- **Portfolio error:** how far the 255-household forecast is off per hour, as a % of average consumption (282 kWh per hour). Lower is better.
+- **Coverage:** how often the actual consumption fell inside the uncertainty range (10–90%). Ideal is 80%.
+- LightGBM and CatBoost here are the versions with the 8 extra features (section 7). The full comparison of all models follows.
+
+### All models
+
 | Model | Hourly nMAE | vs HGB (pp, 95% CI) | Bias (kWh/h) | Daily nMAE | Household nMAE | Regret €/MWh |
 |---|---|---|---|---|---|---|
 | **LightGBM v2** † | **14.07%** | [−0.86, −0.06] | +0.4 | **11.44%** | 44.1% | **6.33** |
