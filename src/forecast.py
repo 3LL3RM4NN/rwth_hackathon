@@ -1,5 +1,5 @@
-"""Day-ahead, group-level forecasting model (LightGBM), built on the hourly
-aggregates from ``src/aggregate.py``.
+"""Day-ahead, group-level forecasting model (LightGBM), built on the
+15-minute-resolution aggregates from ``src/aggregate.py``.
 
 ProLoaF (the LSTM encoder-decoder engine the task brief asks for primarily) was
 not installed in this environment: pulling and executing its setup code from
@@ -12,34 +12,48 @@ explicitly allows.
 Forecast setup
 --------------
 A forecast is "issued" at ``origin`` = midnight UTC of day D+1, using only data
-from day D and earlier, to predict all 24 hourly values of day D+1
-(``horizon`` h = 0..23, target timestamp t = origin + h).
+from day D and earlier, to predict all 96 15-minute values of day D+1
+(``horizon`` h = 0..95 fifteen-minute steps since midnight, target timestamp
+``t = origin + h * 15min``).
 
-Only lag features with lag >= 24h are used, because for h > 0 a lag < 24h
-would reach into day D+1 itself (not yet known at the time the forecast is
-issued) -- e.g. a naive "previous hour" feature is safe for h=0 but leaks
-future information for h=5. Anchoring every lag to t (not to origin) at >=24h
-keeps every lag strictly inside day D or earlier for every horizon.
+Only lag features with lag >= 24h (96 steps) are used, because for h > 0 a lag
+< 96 steps would reach into day D+1 itself (not yet known at the time the
+forecast is issued) -- e.g. a naive "previous step" feature is safe for h=0 but
+leaks future information for h=20. Anchoring every lag to t (not to origin) at
+>=96 steps keeps every lag strictly inside day D or earlier for every horizon
+-- the same argument as before, just re-scaled from hours to 15-min steps.
 
 Weather is the one deliberate exception/simplification: there is no day-ahead
 weather *forecast* in this dataset, so same-day weather *actuals* at the
-target timestamp t are used as a stand-in, per the task brief. This is a
-known source of optimism in the reported accuracy and is called out again in
-the report.
+target timestamp t are used as a stand-in, per the task brief (and
+``aggregate.py``'s own linear-interpolation-to-15min simplification for that
+weather data is inherited here). This is a known source of optimism in the
+reported accuracy and is called out again in the report.
+
+Feature construction below is fully vectorised (no per-row Python loop): since
+``origin`` is always just ``t.normalize()`` (midnight of t's own calendar day)
+and ``horizon`` is always just how far past that midnight t is, every lag/
+rolling feature is a plain ``Series.shift``/``rolling`` over the full
+continuous 15-min index, computed once for the whole series.
 """
 
 from __future__ import annotations
 
 import json
 
-import numpy as np
 import pandas as pd
 from lightgbm import LGBMRegressor
 from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error, mean_squared_error
 
 from src import aggregate
 
-LAGS_HOURS = [24, 48, 168]  # yesterday / 2 days ago / same weekday last week
+STEPS_PER_HOUR = 4  # 15-min resolution
+STEPS_PER_DAY = 24 * STEPS_PER_HOUR  # 96
+LAG_HOURS = [24, 48, 168]  # yesterday / 2 days ago / same weekday last week
+LAG_STEPS = {f"lag_{h}h": h * STEPS_PER_HOUR for h in LAG_HOURS}
+ROLLING_WINDOW_STEPS = STEPS_PER_DAY  # 24h window, anchored to end at t-96 steps (see module docstring)
+SAME_TIMEOFDAY_LOOKBACK_DAYS = 7
+
 WEATHER_FEATURES = [
     "Temperature_avg_hourly",
     "DewPoint_hourly",
@@ -52,49 +66,49 @@ TARGET = "kWh_total_group_sum"
 TRAIN_FRACTION = 0.8
 
 
-def load_group_hourly(name: str) -> pd.DataFrame:
-    df = pd.read_csv(f"reports/{name}_hourly.csv", index_col=0, parse_dates=True)
+def load_group_15min(name: str) -> pd.DataFrame:
+    df = pd.read_csv(f"reports/{name}_15min.csv", index_col=0, parse_dates=True)
     return df
 
 
 def build_supervised_table(df: pd.DataFrame) -> pd.DataFrame:
     s = df[TARGET]
-    origins = pd.date_range(
-        df.index.min().normalize() + pd.Timedelta(days=1),
-        df.index.max().normalize(),
-        freq="D",
-        tz="UTC",
+    idx = s.index
+    print(f"Building supervised table over {len(idx)} 15-min timestamps (vectorised)...")
+
+    table = pd.DataFrame(index=idx)
+    table["y"] = s
+
+    for name, lag in LAG_STEPS.items():
+        table[name] = s.shift(lag)
+
+    # Smoothed recent history: mean of the 24h window ending at t-96 steps
+    # (t-191..t-96), i.e. entirely within day D or earlier for every horizon.
+    table["rolling_mean_24_48"] = s.shift(ROLLING_WINDOW_STEPS).rolling(ROLLING_WINDOW_STEPS).mean()
+
+    # Mean of "this exact 15-min-of-day" across the past week (7 lags spaced
+    # one day apart) -- all are >=1 day old, so always safe regardless of h.
+    same_timeofday = pd.concat(
+        [s.shift(STEPS_PER_DAY * k) for k in range(1, SAME_TIMEOFDAY_LOOKBACK_DAYS + 1)], axis=1
     )
+    table["rolling_mean_same_timeofday_7d"] = same_timeofday.mean(axis=1, skipna=True)
 
-    rows = []
-    n_origins = len(origins)
-    print(f"Building supervised table over {n_origins} candidate origin-days x 24h...")
-    for i, origin in enumerate(origins, start=1):
-        for h in range(24):
-            t = origin + pd.Timedelta(hours=h)
-            if t not in s.index:
-                continue
-            row = {"origin": origin, "horizon": h, "target_time": t, "y": s.get(t, np.nan)}
-            for lag in LAGS_HOURS:
-                row[f"lag_{lag}"] = s.get(t - pd.Timedelta(hours=lag), np.nan)
-            # Smoothed recent history, anchored so its most recent point is
-            # t-24h (i.e. entirely within day D or earlier for every horizon).
-            window = s.reindex(pd.date_range(t - pd.Timedelta(hours=47), t - pd.Timedelta(hours=24), freq="h"))
-            row["rolling_mean_24_48"] = window.mean()
-            same_hour_week = [s.get(t - pd.Timedelta(hours=24 * k), np.nan) for k in range(1, 8)]
-            row["rolling_mean_same_hour_7d"] = np.nanmean(same_hour_week)
-            for feat in WEATHER_FEATURES:
-                row[feat] = df[feat].get(t, np.nan)
-            row["hour"] = t.hour
-            row["dow"] = t.dayofweek
-            row["month"] = t.month
-            row["is_weekend"] = int(t.dayofweek >= 5)
-            rows.append(row)
-        if i % 100 == 0 or i == n_origins:
-            print(f"  {i}/{n_origins} origin-days done")
+    for feat in WEATHER_FEATURES:
+        table[feat] = df[feat]
 
-    table = pd.DataFrame(rows)
-    return table
+    table["origin"] = idx.normalize()
+    table["target_time"] = idx
+    # horizon = 15-min-of-day index (0..95); origin is always midnight of t's
+    # own day, so this is equivalent to (t - origin) / 15min without the
+    # Timedelta-division deprecation warning that triggers on this pandas version.
+    table["horizon"] = idx.hour * STEPS_PER_HOUR + idx.minute // 15
+    table["hour"] = idx.hour
+    table["minute"] = idx.minute
+    table["dow"] = idx.dayofweek
+    table["month"] = idx.month
+    table["is_weekend"] = (idx.dayofweek >= 5).astype(int)
+
+    return table.reset_index(drop=True)
 
 
 def chronological_split(table: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -107,16 +121,16 @@ def chronological_split(table: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame
 
 
 FEATURE_COLUMNS = (
-    [f"lag_{lag}" for lag in LAGS_HOURS]
-    + ["rolling_mean_24_48", "rolling_mean_same_hour_7d"]
+    list(LAG_STEPS.keys())
+    + ["rolling_mean_24_48", "rolling_mean_same_timeofday_7d"]
     + WEATHER_FEATURES
-    + ["hour", "dow", "month", "is_weekend", "horizon"]
+    + ["hour", "minute", "dow", "month", "is_weekend", "horizon"]
 )
 
 
 def train_and_evaluate(name: str, n_households: int) -> dict:
-    print(f"Loading reports/{name}_hourly.csv...")
-    df = load_group_hourly(name)
+    print(f"Loading reports/{name}_15min.csv...")
+    df = load_group_15min(name)
     table = build_supervised_table(df)
     usable = table.dropna(subset=FEATURE_COLUMNS + ["y"])
     dropped = len(table) - len(usable)
@@ -148,10 +162,10 @@ def train_and_evaluate(name: str, n_households: int) -> dict:
         .mean()
     )
 
-    # Naive day-ahead baseline for context: "same hour, same day of week, last
-    # week" (lag_168), the single most defensible no-model forecast available
-    # at origin time.
-    naive_mae = mean_absolute_error(test["y"], test["lag_168"])
+    # Naive day-ahead baseline for context: "same 15-min-of-day, same day of
+    # week, last week" (lag_168h), the single most defensible no-model
+    # forecast available at origin time.
+    naive_mae = mean_absolute_error(test["y"], test["lag_168h"])
 
     result = {
         "name": name,
@@ -190,9 +204,9 @@ if __name__ == "__main__":
         print(f"\n=== {name} ===")
         print(f"households={res['n_households']}  train_rows={res['n_rows_train']}  test_rows={res['n_rows_test']}")
         print(f"test period: {res['test_origin_range']}")
-        print(f"MAE={res['mae']:.2f} kWh/h  RMSE={res['rmse']:.2f} kWh/h  MAPE={res['mape']*100:.1f}%")
-        print(f"MAE per household={res['mae_per_household']:.4f} kWh/h")
-        print(f"naive (same hour, last week) MAE={res['naive_lag168_mae']:.2f} kWh/h")
+        print(f"MAE={res['mae']:.2f} kWh/15min  RMSE={res['rmse']:.2f} kWh/15min  MAPE={res['mape']*100:.1f}%")
+        print(f"MAE per household={res['mae_per_household']:.4f} kWh/15min")
+        print(f"naive (same 15-min-of-day, last week) MAE={res['naive_lag168_mae']:.2f} kWh/15min")
 
     with open("reports/forecast_metrics.json", "w") as f:
         json.dump(results, f, indent=2)

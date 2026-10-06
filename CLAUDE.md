@@ -44,24 +44,31 @@ Run in order (each stage writes its outputs to `reports/`, consumed by the next 
 ```bash
 python3 -m src.pv_features    # per-household PV-pattern features -> reports/pv_features.csv
 python3 -m src.pv_detection   # classifier vs surveyed PV flag -> reports/pv_detect*.{csv,json}
-python3 -m src.aggregate      # hourly group aggregates (PV / non-PV / combined) -> reports/*_hourly.csv
-python3 -m src.forecast       # LightGBM day-ahead model per group -> reports/forecast_metrics.json, grouping_comparison.json
+python3 -m src.aggregate      # 15-min group aggregates (PV / non-PV / combined) -> reports/*_15min.csv
+python3 -m src.forecast       # LightGBM day-ahead model per group, 15-min steps -> reports/forecast_metrics.json, grouping_comparison.json
 ```
 
 - `src/data_loading.py` — all raw-CSV readers (households/meta/overview/weather/15-min);
   everything else imports from here rather than re-parsing CSVs.
 - `src/pv_features.py` — turns a household's 15-min `kWh_received_Total` into PV-pattern
   summary features (midday/night suppression ratios, seasonal contrast, sunshine
-  correlation). `household_hourly_total()` here is also reused by `aggregate.py`.
+  correlation), computed at an intentionally coarse hourly grain via
+  `household_hourly_total()` regardless of the aggregation pipeline's resolution.
+  `household_resampled_total(household_id, freq)` is the generalised version
+  `aggregate.py` reuses at `freq="15min"`.
 - `src/pv_detection.py` — trains/cross-validates the PV classifier against the surveyed
   `Installation_HasPVSystem` flag; this flag, not the detector's output, is what defines
   the forecasting groups in `aggregate.py` (the detector is a validation exercise, used
   only to additionally score the 165 unsurveyed households).
-- `src/aggregate.py` — builds the hourly group-sum series + weighted multi-station
-  weather for a group; handles the meter-rollout/partial-coverage problem by trimming to
-  a "stable window" (≥70% of the group's eventual households reporting).
-- `src/forecast.py` — LightGBM day-ahead (24h horizon) model per group; see its docstring
-  for the no-leakage lag-feature design (only lags ≥24h are safe across all 24 horizons).
+- `src/aggregate.py` — builds the group-sum consumption series at its **native 15-min
+  resolution** (not downsampled to match weather) + weighted multi-station weather
+  **upsampled** from hourly to 15-min via time-based linear interpolation; handles the
+  meter-rollout/partial-coverage problem by trimming to a "stable window" (≥70% of the
+  group's eventual households reporting).
+- `src/forecast.py` — LightGBM day-ahead model per group at 15-min steps (horizon = 96
+  steps = 24h); see its docstring for the no-leakage lag-feature design (only lags ≥96
+  steps/24h are safe across all 96 horizons) and the fully-vectorised feature
+  construction (no per-row Python loop).
 
 Full write-up of methodology, results, and known simplifications: `reports/level1_report.md`.
 ProLoaF (the brief's primary choice) was not installed/used — installing its setup code
@@ -106,7 +113,12 @@ names.
 Resolution mismatch is a first-class problem: smart-meter data is 15-min, weather is
 hourly. You must explicitly choose and justify a resampling strategy (upsample weather,
 aggregate consumption to hourly, or otherwise) — this is called out in the README as
-something graders look for, not an incidental detail.
+something graders look for, not an incidental detail. The Level 1 pipeline
+(`src/aggregate.py`) upsamples weather to 15-min via time-based linear interpolation and
+keeps consumption at its native 15-min resolution, rather than the reverse (an earlier
+version of this pipeline aggregated consumption up to hourly instead) — see
+`src/aggregate.py`'s module docstring for why that's a real simplification for the two
+cumulative-style weather columns specifically.
 
 ## Hard modeling constraints (apply to every level)
 

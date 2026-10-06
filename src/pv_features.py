@@ -31,15 +31,26 @@ WINTER_MONTHS = {11, 12, 1, 2}
 NEAR_ZERO_THRESHOLD_KWH = 0.05  # per-hour import below this counts as "near zero"
 
 
-def household_hourly_total(household_id: str) -> pd.Series:
-    """Hourly-summed kWh_received_Total for one household, UTC-indexed.
+def household_resampled_total(household_id: str, freq: str = "1h") -> pd.Series:
+    """kWh_received_Total for one household, resampled onto a regular
+    UTC-indexed grid at the given frequency.
 
-    An hour with zero reported 15-min rows is left as NaN (not 0): we do not
-    want "no data" to masquerade as "no consumption" in the ratio features below.
+    A period with zero reported 15-min rows is left as NaN (not 0): we do not
+    want "no data" to masquerade as "no consumption". At ``freq="15min"`` this
+    is close to a no-op (the source data is already ~15-min resolution) but
+    still regularises the grid -- e.g. fills in a period with no rows at all
+    as an explicit NaN rather than silently omitting it.
     """
     ts = dl.load_household_timeseries(household_id)
     s = ts.set_index("Timestamp")["kWh_received_Total"]
-    return s.resample("1h").sum(min_count=1)
+    return s.resample(freq).sum(min_count=1)
+
+
+def household_hourly_total(household_id: str) -> pd.Series:
+    """Hourly-summed kWh_received_Total -- used for the (intentionally
+    coarse, hour-of-day-level) PV-pattern features below, independent of the
+    resolution used for the group aggregation/forecasting pipeline."""
+    return household_resampled_total(household_id, freq="1h")
 
 
 def _safe_ratio(numer: float, denom: float) -> float:
