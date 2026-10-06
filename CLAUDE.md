@@ -80,6 +80,27 @@ python3 -m src.forecast       # LightGBM day-ahead model per group, 15-min steps
   stand-in (an earlier version of this pipeline did that as a brief-sanctioned
   simplification; that's a real fix now, not just a disclosed shortcut).
 
+Feature-selection experiments (not part of the pipeline above; run after `src.forecast`'s inputs exist):
+
+```bash
+python3 -m src.ablation            # remove one group of the current features -> reports/ablation_{results.csv,table.md}
+python3 -m src.features            # (re)build reports/*_extras_15min.csv, print candidate-feature coverage
+python3 -m src.ablation_extended   # test the candidate feature groups -> reports/ablation_extended_{results.csv,table.md}
+```
+
+- `src/ablation.py` — leave-one-group-out ablation of `forecast.FEATURE_COLUMNS`. Verdicts
+  come from a chronological validation slice of the training days; the test days are a
+  cross-check only (never pick features on test error).
+- `src/features.py` — candidate feature groups (local calendar/holidays, more target
+  history, hourly-built weather as of cutoff, solar geometry, portfolio composition,
+  behavioural, interactions). Adds columns to `forecast.build_supervised_table`'s output
+  without changing the production feature set. Its `oracle_*` group uses *measured*
+  delivery-day weather and is an upper bound only, never a day-ahead result. Read its
+  docstring for the assumptions the dataset forces (no coordinates, no radiation, region
+  unknown for holidays).
+- `src/ablation_extended.py` — add-one-group / remove-one-group / oracle / target-transform
+  experiments on those candidates.
+
 Full write-up of methodology, results, and known simplifications: `reports/level1_report.md`.
 ProLoaF (the brief's primary choice) was not installed/used — installing its setup code
 from an external git repo wasn't approved for this sandboxed session, so LightGBM is used

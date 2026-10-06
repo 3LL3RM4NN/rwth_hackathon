@@ -197,6 +197,17 @@ FEATURE_COLUMNS = (
     + ["hour", "minute", "dow", "month", "is_weekend", "horizon"]
 )
 
+# Shared with src/ablation.py, so ablation variants differ from this model
+# only in their feature set.
+MODEL_PARAMS = {
+    "n_estimators": 400,
+    "learning_rate": 0.05,
+    "num_leaves": 31,
+    "min_child_samples": 20,
+    "random_state": 0,
+    "verbosity": -1,
+}
+
 
 def train_and_evaluate(name: str, n_households: int) -> dict:
     print(f"Loading reports/{name}_15min.csv...")
@@ -209,14 +220,7 @@ def train_and_evaluate(name: str, n_households: int) -> dict:
     train, test = chronological_split(usable)
 
     print(f"Training LightGBM on {len(train)} rows (400 estimators)...")
-    model = LGBMRegressor(
-        n_estimators=400,
-        learning_rate=0.05,
-        num_leaves=31,
-        min_child_samples=20,
-        random_state=0,
-        verbosity=-1,
-    )
+    model = LGBMRegressor(**MODEL_PARAMS)
     model.fit(train[FEATURE_COLUMNS], train["y"])
     print(f"Evaluating on {len(test)} held-out rows...")
     pred = model.predict(test[FEATURE_COLUMNS])
