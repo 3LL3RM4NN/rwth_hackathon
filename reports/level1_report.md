@@ -250,6 +250,14 @@ earlier versions of this pipeline reported directly.
 | No-PV | 252 | 2023-06-25 → 2024-02-27 | 0.0347 | 0.0504 | **11.0%** | 8.18 | 0.0554 |
 | All-households (ungrouped) | 410 | 2023-05-30 → 2024-02-27 | 0.0328 | 0.0483 | 11.9% | 12.60 | 0.0527 |
 
+Each row's MAPE here is scored on **that model's own full test period** --
+different for all three, since each group's test split starts wherever its
+own chronological 80/20 split lands (§4's "Did grouping actually help?"
+below re-scores all three on one shared, shorter window to make them
+comparable to each other, which changes these numbers again -- e.g.
+all-households' MAPE there is 12.9%, not the 11.9% here; same model, two
+different evaluation windows, not a discrepancy).
+
 Test periods are now 2-3x longer than the surveyed-only/sum-based version's
 (e.g. PV: 6 months vs 3) since training on roughly 1-2 more years of history
 (§3) pushes the chronological 80/20 split's test boundary earlier too. The
@@ -326,12 +334,23 @@ simplified/faster model.
 
 ### Did grouping actually help?
 
-The three model-level rows above aren't directly comparable as-is — each
-model's test window is "that series' own last 20% of days," and the series
-have different stable windows. Re-scoring all three on the **same** common
-test window (from 2023-09-05, the latest of the three start dates) fixes
-that, but raises a second, more important question: *how* do you combine the
-PV and no-PV models' errors into one "grouped approach" number?
+The three model-level rows in the Results table above aren't directly
+comparable as-is — each model's test window is "that series' own last 20% of
+days," and the series have different stable windows (§3), so they cover
+different calendar periods. The fix is to re-score the **same three trained
+models** on one **shared, shorter** test window instead: the latest of the
+three individual test-start dates, 2023-09-05 (`pv_group`'s own start,
+since it has the least recovered history of the three -- see §3). Concretely,
+this means every number in the table below is that same model evaluated on a
+*subset* of the rows used for its Results-table row above -- e.g.
+`all_households_group`'s MAPE drops from 12.9% here back to 11.9% in the
+Results table purely because the Results table also includes
+2023-05-30–2023-09-04, a stretch this particular model happened to forecast
+more easily; nothing about the model itself changed between the two tables.
+Restricting to one shared window like this is necessary *before* we can even
+ask the second, more important question this section is really about: *how*
+do you combine the PV and no-PV models' errors into one "grouped approach"
+number to compare against that single ungrouped model?
 
 **The naive way is wrong, and overstates the error.** Simply adding the two
 groups' own total-scale MAE values together (`reports/grouping_comparison.json`'s
