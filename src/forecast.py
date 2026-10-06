@@ -5,7 +5,7 @@ Matching the actual day-ahead market use case
 ----------------------------------------------
 Day-ahead market bids have to be submitted by a fixed gate-closure time the
 day *before* delivery -- modelled here as ``CUTOFF_HOUR:CUTOFF_MINUTE``
-(11:45) on day D-1 for delivery day D. Every feature for every one of day D's
+(11:45 AM, before noon) on day D-1 for delivery day D. Every feature for every one of day D's
 96 15-minute targets is therefore computed as of that single, fixed cutoff
 timestamp, not as of midnight or as of the target time itself: nothing from
 after 11:45 on D-1 is ever used, including the rest of D-1 itself (11:45
@@ -62,7 +62,7 @@ from src import aggregate
 STEPS_PER_HOUR = 4  # 15-min resolution
 STEPS_PER_DAY = 24 * STEPS_PER_HOUR  # 96
 
-CUTOFF_HOUR = 11  # day-ahead bid gate closure: 11:45 on the day before delivery
+CUTOFF_HOUR = 11  # day-ahead bid gate closure: 11:45 AM (24h clock, before noon) on the day before delivery
 CUTOFF_MINUTE = 45
 CUTOFF_STEP_OF_DAY = CUTOFF_HOUR * STEPS_PER_HOUR + CUTOFF_MINUTE // 15  # 47
 # Gap from the cutoff back to the *next* midnight (12h15m) -- used to derive

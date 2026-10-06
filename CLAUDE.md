@@ -67,7 +67,7 @@ python3 -m src.forecast       # LightGBM day-ahead model per group, 15-min steps
   group's eventual households reporting).
 - `src/forecast.py` — LightGBM day-ahead model per group at 15-min steps (horizon = 96
   steps = 24h), matching the actual day-ahead market use case: every feature is anchored
-  to a fixed **gate-closure cutoff of 11:45 the day before delivery** (`CUTOFF_HOUR`/
+  to a fixed **gate-closure cutoff of 11:45 AM (before noon) the day before delivery** (`CUTOFF_HOUR`/
   `CUTOFF_MINUTE`), not to midnight of the delivery day — bids have to be submitted before
   gate closure, so the last ~12h of the previous day isn't actually known at bid time
   either (an earlier version of this pipeline assumed it was, via a midnight-anchored

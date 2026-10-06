@@ -151,7 +151,7 @@ above.
 **Matching the actual use case: bids are placed before gate closure, not at
 midnight.** A real day-ahead market bid for delivery day D has to be
 submitted by a fixed gate-closure time on day D-1 -- modelled here as
-**11:45 on D-1** (`CUTOFF_HOUR`/`CUTOFF_MINUTE`). An earlier version of this
+**11:45 AM, before noon, on D-1** (`CUTOFF_HOUR`/`CUTOFF_MINUTE`). An earlier version of this
 pipeline assumed "origin = midnight of D" -- i.e. that all of day D-1 was
 already known -- which isn't actually true at real bidding time: the last
 12h15m of D-1 (11:45 onward) wouldn't be known yet either. Every feature for
