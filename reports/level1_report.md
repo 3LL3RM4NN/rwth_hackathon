@@ -409,11 +409,15 @@ prediction back to a kWh total via its own `active_household_count`, sums the
 then scores that one combined series -- i.e. it measures what a desk bidding
 PV + no-PV as a single combined position would actually see.
 
-| Approach | Portfolio MAE (kWh/15min) | RMSE | MAPE |
-|---|---|---|---|
-| Single ungrouped model (all 410 households) | 16.64 | 22.67 | 12.9% |
-| Grouped, **naive MAE sum** (wrong -- see above) | *18.25* | — | — |
-| Grouped, **portfolio-wide** (correct) | **16.45** | **22.57** | **12.6%** |
+**Test period for every row below: 2023-09-05 → 2024-02-27** (the shared
+window described above -- not each model's own full test period from the
+Results table).
+
+| Approach | Test period | Portfolio MAE (kWh/15min) | RMSE | MAPE |
+|---|---|---|---|---|
+| Single ungrouped model (all 410 households) | 2023-09-05 → 2024-02-27 | 16.64 | 22.67 | 12.9% |
+| Grouped, **naive MAE sum** (wrong -- see above) | 2023-09-05 → 2024-02-27 | *18.25* | — | — |
+| Grouped, **portfolio-wide** (correct) | 2023-09-05 → 2024-02-27 | **16.45** | **22.57** | **12.6%** |
 
 **With roughly 1-2 extra years of training history (§3), grouping now shows a
 real, consistent edge across every metric again.** The portfolio-wide
