@@ -131,7 +131,7 @@ Here are some base courses you can have a look at if you are looking for some in
 
 # Our expectations
 
-We expect participants to stay in touch with the mentors throughout the day and reach out early if you're stuck rather than saving your questions for the end.
-We are open to your questions and hope to provide as much support as possible to you given your motivation and dedication to the challenge topic.
-Given the one-day format, pick a scope you can realistically finish rather than one you can only start — a small, complete solution beats a big, unfinished one.
+We expect participants to stay in touch with the mentors throughout the day and reach out early if they are stuck.
+We are open to your questions and hope to provide as much support as possible to you.
+Given the half-day format, pick a scope you can realistically finish rather than one you can only start — a small, complete solution beats a big, unfinished one.
 Have fun and happy hacking!
