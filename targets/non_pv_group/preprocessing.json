@@ -1,0 +1,26 @@
+{
+    "data_path": "../../targets/non_pv_group/data/non_pv_group.csv",
+    "raw_path": "../../targets/non_pv_group/raw/",
+    "local": true,
+    "add_aux_features": true,
+    "csv_files": [
+        {
+            "file_name": "non_pv_group_raw.csv",
+            "date_column": "Timestamp",
+            "time_zone": "UTC",
+            "dayfirst": false,
+            "sep": ";",
+            "combine": false,
+            "use_columns": [
+                "Timestamp",
+                "kWh_total_group_sum",
+                "Temperature_avg_hourly",
+                "DewPoint_hourly",
+                "Humidity_avg_hourly",
+                "Precipitation_total_hourly",
+                "Sunshine_duration_hourly",
+                "WindSpeed_hourly"
+            ]
+        }
+    ]
+}
