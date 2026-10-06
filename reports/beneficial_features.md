@@ -6,7 +6,8 @@ seven groups showed no benefit or made the forecast worse; see `ablation_extende
 results.
 
 All 21 features are computable at the day-ahead gate closure (11:45 UTC the day before delivery).
-None uses anything measured after it.
+None uses anything measured after it. Measured weather of the delivery day (the earlier "oracle"
+variant) is not part of the feature set or of these results.
 
 ## Evidence
 
@@ -15,15 +16,15 @@ group helps. Bold means the 95% interval excludes zero.
 
 | Group | PV group | Non-PV group | All known |
 |---|---|---|---|
-| 4 solar geometry × PV share | **-6.0%** / -1.2% | **-2.7%** / -0.1% | **-6.0%** / +1.1% |
-| 1 local calendar, holidays, daylight | -4.3% / -1.3% | -1.2% / -2.5% | -6.3% / -1.9% |
+| 4 solar geometry × PV share | **-6.0%** / -0.9% | **-2.7%** / -0.5% | **-4.7%** / +1.4% |
+| 1 local calendar, holidays, daylight | -4.2% / -0.9% | -1.2% / **-2.9%** | -6.3% / -2.2% |
 | 7 interactions + weather-corrected lag | -0.6% / -1.4% | **-3.5%** / -2.0% | -1.3% / -1.2% |
 
 - **Solar geometry** is the only group that significantly reduces validation error in all three
   series. On the test days it is neutral.
-- **Local calendar** points in the helpful direction in all six comparisons, though each one alone is
-  within noise. It is also the only group the all-known model clearly misses when removed from the
-  model with all groups (+5.2% ± 3.3).
+- **Local calendar** points in the helpful direction in all six comparisons, though all but one are
+  within noise. Removing it from the model with all groups raises the all-known validation error by
+  7.5% ± 3.1.
 - **Interactions** also point in the helpful direction in all six comparisons, but the effect is
   small and significant only for non-PV validation.
 
@@ -32,8 +33,8 @@ may not add up. That combination should be run before `forecast.FEATURE_COLUMNS`
 
 ## Group 4: solar geometry × PV share (6 features)
 
-The dataset has no coordinates, so sun positions are calculated for one assumed location (47.4°N,
-8.5°E) using standard astronomical formulas.
+The dataset has no coordinates, so sun positions are calculated for one assumed location, the
+geographic centre of Germany (51.16°N, 10.45°E), using standard astronomical formulas.
 
 | Feature | What it is |
 |---|---|
@@ -51,8 +52,7 @@ signal rather than a PV effect.
 
 ## Group 1: local calendar, holidays, daylight (11 features)
 
-The existing calendar features are in UTC. These are in local clock time (`Europe/Zurich`, the same
-clock as Germany), which is what household routines follow.
+The existing calendar features are in UTC. These are in local clock time (`Europe/Berlin`), which is what household routines follow.
 
 | Feature | What it is |
 |---|---|
@@ -60,16 +60,16 @@ clock as Germany), which is what household routines follow.
 | `weekday_local` | Day of the week by local date, 0 = Monday. |
 | `is_weekend_local` | 1 on local Saturday and Sunday. |
 | `day_of_year` | 1 to 366, a finer season signal than `month`. |
-| `is_public_holiday` | 1 on New Year, Good Friday, Easter Monday, 1 May, Ascension, Whit Monday, 25 and 26 December. |
+| `is_public_holiday` | 1 on New Year, Good Friday, Easter Monday, 1 May, Ascension, Whit Monday, 3 October, 25 and 26 December. |
 | `is_bridge_day` | 1 on a Friday after a Thursday holiday or a Monday before a Tuesday holiday. |
 | `is_dst` | 1 while summer time is in effect. |
 | `is_dst_change_day` | 1 on the two days a year with 23 or 25 local hours. |
 | `is_christmas_period` | 1 from 24 December to 2 January. |
 | `is_easter_week` | 1 from the Monday before Easter through Easter Monday. |
-| `day_length_hours` | Hours between sunrise and sunset at the assumed location, roughly 8.4 in December to 15.9 in June. |
+| `day_length_hours` | Hours between sunrise and sunset at the assumed location, roughly 7.7 in December to 16.3 in June. |
 
-The holiday list is limited to days that are holidays both across Germany and in the canton of
-Zurich, because the dataset does not name the region. School holidays are left out for the same
+The holiday list is limited to the nationwide German holidays, because the dataset does not name
+the federal state. School holidays are left out for the same
 reason. The series cover only 15 to 23 months, so each holiday appears once or twice and the model
 has very few examples to learn those flags from.
 
@@ -93,7 +93,7 @@ These build on two inputs:
 Two limitations:
 
 - **"Now" is yesterday's temperature.** The delivery day's own temperature is not known at bid time,
-  so the correction uses the latest 24-hour mean as a stand-in. With a real weather forecast this
+  so the correction uses the latest 24-hour mean as a stand-in. With a weather forecast for the delivery day this
   feature would be much stronger.
 - **The quarter-of-day product is crude.** Multiplying by an index from 0 to 95 makes the feature 0
   at midnight and largest late in the evening, which has no physical meaning.

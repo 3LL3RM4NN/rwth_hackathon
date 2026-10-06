@@ -8,7 +8,7 @@ is what the ablation is for.
 
 Availability rule
 -----------------
-Every feature except the ``oracle_*`` group is computable from data known at
+Every feature is computable from data known at
 the gate-closure cutoff (11:45 UTC on D-1, see ``src/forecast.py``):
 
 - **Target history** is either looked up at the cutoff itself (``*_asof_cutoff``)
@@ -25,21 +25,21 @@ the gate-closure cutoff (11:45 UTC on D-1, see ``src/forecast.py``):
   cutoff*, not at the target time (which households will report tomorrow is
   not known today).
 
-``oracle_*`` features use *measured* weather of the delivery day itself. That
-is not available at bid time. They exist only to measure an upper bound on what
-a perfect weather forecast could add, and must never be reported as a
-day-ahead result.
+Measured weather of the delivery day itself is never used: it is not available
+at bid time.
 
 Assumptions forced by the dataset
 ---------------------------------
-- **Local time**: ``Europe/Zurich`` (identical clock to ``Europe/Berlin``, so
-  this holds for either Germany or Switzerland).
-- **Public holidays**: only the days that are holidays both nationwide in
-  Germany and in the canton of Zurich (New Year, Good Friday, Easter Monday,
-  1 May, Ascension, Whit Monday, 25/26 December), since the region isn't
-  given. School holidays are *not* included for the same reason.
-- **Solar geometry**: no station coordinates exist, so one assumed location
-  (``ASSUMED_LAT``/``ASSUMED_LON``) and textbook declination/hour-angle
+- **Location**: the dataset names no region and has no coordinates. The
+  households are assumed to be in Germany, represented by its geographic
+  centre (``ASSUMED_LAT``/``ASSUMED_LON``).
+- **Local time**: ``Europe/Berlin``.
+- **Public holidays**: only the nationwide German ones (New Year, Good Friday,
+  Easter Monday, 1 May, Ascension, Whit Monday, 3 October, 25/26 December),
+  since the federal state isn't given. School holidays are *not* included for
+  the same reason.
+- **Solar geometry**: no station coordinates exist, so the one assumed location
+  above and textbook declination/hour-angle
   formulas are used instead of pvlib. ``clear_sky_proxy`` is the sine of the
   solar elevation (clipped at 0), a shape proxy for clear-sky irradiance, not
   W/m2.
@@ -68,9 +68,9 @@ from src import data_loading as dl
 
 GROUPS = {"pv_group": True, "non_pv_group": False, "all_known_group": None}
 
-LOCAL_TZ = "Europe/Zurich"
-ASSUMED_LAT = 47.4
-ASSUMED_LON = 8.5
+LOCAL_TZ = "Europe/Berlin"
+ASSUMED_LAT = 51.16  # geographic centre of Germany
+ASSUMED_LON = 10.45
 
 WEATHER_CUTOFF_LAG_HOURS = 1  # whole hours before the cutoff's own hour stamp (11:00 -> 10:00)
 
@@ -83,7 +83,6 @@ DEFROST_MIN_HUMIDITY = 80.0  # percent
 SENSITIVITY_WINDOW_DAYS = 28
 NIGHT_STEPS = slice(0, 20)  # 00:00-05:00 UTC
 DAY_STEPS = slice(32, 80)  # 08:00-20:00 UTC
-ORACLE_GROUP = "oracle: measured day-D weather"
 
 STEPS_PER_DAY = forecast.STEPS_PER_DAY
 
@@ -192,6 +191,7 @@ def _public_holidays(years: range) -> pd.DatetimeIndex:
             pd.Timestamp(year, 5, 1),
             easter_sunday + _days(39),  # Ascension
             easter_sunday + _days(50),  # Whit Monday
+            pd.Timestamp(year, 10, 3),  # German Unity Day
             pd.Timestamp(year, 12, 25),
             pd.Timestamp(year, 12, 26),
         ]
@@ -419,30 +419,6 @@ def build_extended_table(name: str) -> tuple[pd.DataFrame, dict[str, list[str]]]
         "heating_degree_x_weekend": hdh_15 * is_weekend_local,
         "temp_delta_vs_lag_7d": temp_delta,
         "lag_7d_weather_corrected": lag_7d + slope * temp_delta,
-    }
-
-    # --- Oracle: measured weather of the delivery day (NOT known at bid time)
-    temp_15min = df["Temperature_avg_hourly"]
-    sunshine_15min = df["Sunshine_duration_hourly"]
-    oracle_temp_delta = from_day(daily_temp, 0) - temp_week_ago
-    groups[ORACLE_GROUP] = {
-        "oracle_temp": temp_15min.to_numpy(),
-        "oracle_temp_day_mean": from_day(daily_temp, 0),
-        "oracle_temp_day_min": temp_15min.groupby(origin).transform("min").to_numpy(),
-        "oracle_temp_day_max": temp_15min.groupby(origin).transform("max").to_numpy(),
-        "oracle_temp_mean_24h": temp_15min.rolling(96, min_periods=48).mean().to_numpy(),
-        "oracle_heating_degree_15": (15 - temp_15min).clip(lower=0).to_numpy(),
-        "oracle_humidity": df["Humidity_avg_hourly"].to_numpy(),
-        "oracle_defrost": (
-            temp_15min.between(*DEFROST_TEMP_RANGE) & (df["Humidity_avg_hourly"] >= DEFROST_MIN_HUMIDITY)
-        ).astype(int).to_numpy(),
-        "oracle_sunshine": sunshine_15min.to_numpy(),
-        "oracle_sunshine_day_mean": sunshine_15min.groupby(origin).transform("mean").to_numpy(),
-        "oracle_sunshine_x_pv_share": sunshine_15min.to_numpy() * pv_share,
-        "oracle_wind": df["WindSpeed_hourly"].to_numpy(),
-        "oracle_precip": df["Precipitation_total_hourly"].to_numpy(),
-        "oracle_temp_delta_vs_lag_7d": oracle_temp_delta,
-        "oracle_lag_7d_weather_corrected": lag_7d + slope * oracle_temp_delta,
     }
 
     new_columns = pd.DataFrame({col: values for features in groups.values() for col, values in features.items()})

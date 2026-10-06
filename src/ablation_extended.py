@@ -8,12 +8,9 @@ module's docstring. The questions asked here are different, though:
 1. **Add one group to the current model.** Current 23 features + one candidate
    group. Negative delta = the group reduces error on its own.
 2. **Remove one group from the extended model.** Current features + *all*
-   non-oracle candidate groups, minus one. Positive delta = the group still
+   candidate groups, minus one. Positive delta = the group still
    contributes once every other candidate is present; ~0 = redundant.
-3. **Oracle weather.** Adds *measured* delivery-day weather. This is not
-   available at bid time (see ``src/features.py``); it only bounds what a
-   perfect weather forecast could add and is not a day-ahead result.
-4. **Target transformation.** Same features, different training target:
+3. **Target transformation.** Same features, different training target:
    the residual to ``rolling_mean_same_timeofday_7d`` (added back at predict
    time) or ``log1p(y)``. Errors are always measured on the original kWh scale.
 
@@ -39,13 +36,11 @@ RESIDUAL_BASELINE = "rolling_mean_same_timeofday_7d"
 SECTION_REFERENCE = "Reference models"
 SECTION_ADD = "Add one group to the current model"
 SECTION_REMOVE = "Remove one group from the extended model"
-SECTION_ORACLE = "Oracle weather (upper bound, not available at bid time)"
 SECTION_TARGET = "Target transformation"
 SECTION_NOTES = {
     SECTION_REFERENCE: "Δ is relative to the current model.",
     SECTION_ADD: "Δ is relative to the current model. Negative = the group helps.",
     SECTION_REMOVE: "Δ is relative to the extended model. Positive = the group still helps once all others are in.",
-    SECTION_ORACLE: "Δ is relative to the current model. Uses measured weather of the delivery day itself.",
     SECTION_TARGET: "Δ is relative to the current model (raw kWh target).",
 }
 
@@ -83,9 +78,7 @@ def run_group(name: str) -> pd.DataFrame:
     print(f"fit={len(fit)} rows  validation={len(val)} rows  test={len(test)} rows")
 
     current = forecast.FEATURE_COLUMNS
-    candidate_groups = {label: cols for label, cols in groups.items() if label != features.ORACLE_GROUP}
-    oracle = groups[features.ORACLE_GROUP]
-    extended = current + [c for cols in candidate_groups.values() for c in cols]
+    extended = current + [c for cols in groups.values() for c in cols]
 
     def errors(columns: list[str], target: str = "level") -> tuple[pd.Series, pd.Series]:
         return _abs_errors(fit, val, columns, target), _abs_errors(train, test, columns, target)
@@ -118,17 +111,12 @@ def run_group(name: str) -> pd.DataFrame:
     record(SECTION_REFERENCE, "extended model (current + all candidate groups)", extended, extended_errs,
            current_errs, addition_verdict)  # fmt: skip
 
-    for label, cols in candidate_groups.items():
+    for label, cols in groups.items():
         record(SECTION_ADD, label, current + cols, errors(current + cols), current_errs, addition_verdict)
 
-    for label, cols in candidate_groups.items():
+    for label, cols in groups.items():
         kept = [c for c in extended if c not in cols]
         record(SECTION_REMOVE, label, kept, errors(kept), extended_errs, ablation.removal_verdict)
-
-    record(SECTION_ORACLE, "current + oracle weather", current + oracle, errors(current + oracle),
-           current_errs, addition_verdict)  # fmt: skip
-    record(SECTION_ORACLE, "extended + oracle weather", extended + oracle, errors(extended + oracle),
-           current_errs, addition_verdict)  # fmt: skip
 
     for label, columns in (("current", current), ("extended", extended)):
         for target, description in (("residual", f"residual to {RESIDUAL_BASELINE}"), ("log1p", "log1p(y)")):
@@ -167,8 +155,6 @@ def write_markdown(results: pd.DataFrame, path: str) -> None:
         "  cross-check and must not be used to pick features.",
         "- **±** is a 95% interval from paired per-day differences; it is somewhat too narrow because",
         "  consecutive days are correlated.",
-        "- The **oracle** rows use measured weather of the delivery day. That is not known at bid time, so they",
-        "  are an upper bound for a perfect weather forecast, not a day-ahead result.",
         "",
     ]
     for name in results["group"].drop_duplicates():

@@ -94,11 +94,11 @@ python3 -m src.ablation_extended   # test the candidate feature groups -> report
 - `src/features.py` — candidate feature groups (local calendar/holidays, more target
   history, hourly-built weather as of cutoff, solar geometry, portfolio composition,
   behavioural, interactions). Adds columns to `forecast.build_supervised_table`'s output
-  without changing the production feature set. Its `oracle_*` group uses *measured*
-  delivery-day weather and is an upper bound only, never a day-ahead result. Read its
+  without changing the production feature set. Measured delivery-day
+  weather is never used. Read its
   docstring for the assumptions the dataset forces (no coordinates, no radiation, region
   unknown for holidays).
-- `src/ablation_extended.py` — add-one-group / remove-one-group / oracle / target-transform
+- `src/ablation_extended.py` — add-one-group / remove-one-group / target-transform
   experiments on those candidates.
 
 Full write-up of methodology, results, and known simplifications: `reports/level1_report.md`.
