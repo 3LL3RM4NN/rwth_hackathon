@@ -17,24 +17,22 @@ lint config.
 
 ## Environment
 
-Poetry-managed Python project (`pyproject.toml`), requires Python >=3.12 — but the
-`poetry` binary itself is **not installed** in this sandbox, so the working venv here
-was created with `uv` instead. Both describe the same dependency set; if `poetry` is
-available in your environment, prefer it and keep `pyproject.toml`/`poetry.lock` as the
-source of truth (and run `poetry lock` after any manual `pyproject.toml` edit, since
-`uv` was used to add `lightgbm` to `pyproject.toml` without being able to regenerate
-`poetry.lock`).
+`uv`-managed Python project (`pyproject.toml` + `uv.lock`), requires Python >=3.12. This
+repo previously targeted Poetry (hence `[project]`'s PEP 621 layout), but Poetry is no
+longer used: `pyproject.toml`'s `[build-system]` has been dropped and
+`[tool.uv] package = false` is set, since there's no installable "utils" package to
+build anyway — the real code is `src/`, imported as `src.<module>`, never installed.
+`uv.lock` is the committed, authoritative dependency lock; regenerate it with `uv lock`
+after any `pyproject.toml` edit.
 
 ```bash
-# with poetry (preferred, once installed):
-poetry install
-poetry run python -m src.forecast
-
-# with uv (used in this sandbox instead):
-uv venv && source .venv/bin/activate
-uv pip install pandas matplotlib polars numpy scikit-learn seaborn jupyterlab lightgbm
+uv sync                         # creates/updates .venv from uv.lock
+source .venv/bin/activate
 python3 -m src.<module>
 ```
+
+(`uv pip install <pkg>` also works for ad-hoc additions, but then run `uv lock` + `uv sync`
+afterwards so `uv.lock` and the venv stay in sync with `pyproject.toml`.)
 
 There is no lint/format/test tooling configured — don't assume `ruff`/`pytest`/etc. exist
 until they're added to `pyproject.toml`.

@@ -18,7 +18,9 @@ dependencies = [
     "lightgbm (>=4.7.0,<5.0.0)"
 ]
 
-
-[build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+# Not an installable/distributed package (there's no "utils" module matching
+# [project].name -- the real code lives in src/, imported as "src.<module>").
+# uv is told not to build/install the project itself, just manage the
+# dependency set above.
+[tool.uv]
+package = false
