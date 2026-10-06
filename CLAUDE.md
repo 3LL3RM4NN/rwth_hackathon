@@ -57,13 +57,17 @@ python3 -m src.forecast       # LightGBM day-ahead model per group, 15-min steps
   `household_resampled_total(household_id, freq)` is the generalised version
   `aggregate.py` reuses at `freq="15min"`.
 - `src/pv_detection.py` — trains/cross-validates the PV classifier against the surveyed
-  `Installation_HasPVSystem` flag; this flag, not the detector's output, is what defines
-  the forecasting groups in `aggregate.py` (the detector is a validation exercise, used
-  only to additionally score the 165 unsurveyed households).
+  `Installation_HasPVSystem` flag (0.937 ROC AUC out-of-fold), then scores the 165
+  unsurveyed households -> `reports/pv_detector_scores.csv` (`detector_pred_pv`).
+  `aggregate.py`'s `household_pv_labels()` consumes this: surveyed flag where known, this
+  detector's output as a fallback for the rest -- so run `pv_detection.py` before
+  `aggregate.py` (the documented pipeline order already does this).
 - `src/aggregate.py` — builds the group-sum consumption series at its **native 15-min
   resolution** (not downsampled to match weather) + weighted multi-station weather
-  **upsampled** from hourly to 15-min via time-based linear interpolation; handles the
-  meter-rollout/partial-coverage problem by trimming to a "stable window" (≥70% of the
+  **upsampled** from hourly to 15-min via time-based linear interpolation; groups are
+  158 PV / 252 no-PV / 410 all-households (every household on disk lands in one group or
+  the other, none excluded); handles the meter-rollout/partial-coverage problem by
+  trimming to a "stable window" (≥70% of the
   group's eventual households reporting).
 - `src/forecast.py` — LightGBM day-ahead model per group at 15-min steps (horizon = 96
   steps = 24h), matching the actual day-ahead market use case: every feature is anchored

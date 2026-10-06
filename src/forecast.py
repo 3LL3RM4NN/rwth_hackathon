@@ -271,7 +271,7 @@ def train_and_evaluate(name: str, n_households: int) -> dict:
 
 if __name__ == "__main__":
     results = {}
-    for name, pv in [("pv_group", True), ("non_pv_group", False), ("all_known_group", None)]:
+    for name, pv in [("pv_group", True), ("non_pv_group", False), ("all_households_group", None)]:
         print(f"\n=== Training {name} ===")
         n_households = len(aggregate.group_household_ids(pv))
         res = train_and_evaluate(name, n_households)
@@ -332,7 +332,7 @@ if __name__ == "__main__":
     # and the *actuals* across both groups first (per 15-min step), then score
     # the combined series. This is the real error the "grouped" approach would
     # produce as a single bid, directly comparable in the same units (total
-    # portfolio kWh/15min) to all_known_group's error, since that model is
+    # portfolio kWh/15min) to all_households_group's error, since that model is
     # already a single portfolio-wide forecast.
     portfolio = preds_by_name["pv_group"][["target_time", "y", "pred"]].merge(
         preds_by_name["non_pv_group"][["target_time", "y", "pred"]],
@@ -356,9 +356,9 @@ if __name__ == "__main__":
 
     print(f"\n=== Fair comparison on common test window (from {common_start}) ===")
     print(
-        f"Ungrouped single model      : portfolio MAE={comparison['all_known_group']['mae']:.2f} "
-        f"kWh/15min  MAPE={comparison['all_known_group']['mape']*100:.1f}%  "
-        f"(MAE/hh={comparison['all_known_group']['mae_per_household']:.4f})"
+        f"Ungrouped single model      : portfolio MAE={comparison['all_households_group']['mae']:.2f} "
+        f"kWh/15min  MAPE={comparison['all_households_group']['mape']*100:.1f}%  "
+        f"(MAE/hh={comparison['all_households_group']['mae_per_household']:.4f})"
     )
     print(
         f"Grouped, portfolio-wide     : portfolio MAE={comparison['grouped_portfolio_wide']['mae']:.2f} "

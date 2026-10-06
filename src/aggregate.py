@@ -1,7 +1,17 @@
 """Build 15-minute-resolution, group-level aggregated consumption + weather
-series for the two Level-1 groups (PV / non-PV), defined by the *surveyed*
-``Installation_HasPVSystem`` flag (not the detector from ``pv_detection.py`` --
-see that module's docstring for why).
+series for the two Level-1 groups (PV / non-PV).
+
+Group membership: the *surveyed* ``Installation_HasPVSystem`` flag
+(`pv_detection.py`'s validation target) where a household was actually
+surveyed, falling back to that module's **detector output**
+(``reports/pv_detector_scores.csv``, column ``detector_pred_pv``) for the 165
+households that were never surveyed. This grows the PV group from 131 to 158
+households (+27 detected) and the no-PV group from 114 to 252 (+138
+detected) -- every one of the 410 households on disk now lands in one group
+or the other, none excluded. The detector's out-of-fold validation numbers
+(`pv_detection.py`/`reports/pv_detection_metrics.json`: 0.937 ROC AUC, 89.4%
+accuracy) are the honesty check on how much noise this fallback likely adds
+versus using the ground-truth flag alone.
 
 Three things have to be handled explicitly, per the task brief:
 
@@ -53,16 +63,24 @@ WEATHER_COLUMNS = [
 ]
 
 
+def household_pv_labels() -> pd.Series:
+    """Household_ID -> bool PV label: the surveyed flag where known, else
+    ``pv_detection.py``'s detector output. Requires
+    ``python3 -m src.pv_detection`` to have been run first (it's the
+    pipeline's documented run order)."""
+    scores = pd.read_csv("reports/pv_detector_scores.csv", index_col=0, dtype={"Household_ID": str})
+    known = scores["Installation_HasPVSystem"].isin([True, False])
+    return scores["Installation_HasPVSystem"].where(known, scores["detector_pred_pv"]).astype(bool)
+
+
 def group_household_ids(pv: bool | None) -> list[str]:
-    """pv=True/False selects the surveyed PV/non-PV group; pv=None selects the
-    union of both (every household with a *known* flag) -- used only to build
-    the single-ungrouped-model comparison baseline in the report."""
-    households = dl.load_households()
-    if pv is None:
-        mask = households["Installation_HasPVSystem"].isin([True, False])
-    else:
-        mask = households["Installation_HasPVSystem"] == pv
-    ids = households.index[mask].tolist()
+    """pv=True/False selects the PV/non-PV group (surveyed flag, falling back
+    to the detector for unsurveyed households -- see module docstring);
+    pv=None selects the union of both, i.e. all 410 households -- used to
+    build the single-ungrouped-model comparison baseline in the report."""
+    labels = household_pv_labels()
+    mask = pd.Series(True, index=labels.index) if pv is None else labels == pv
+    ids = labels.index[mask].tolist()
     # Only keep households that actually have a 15-min file on disk.
     on_disk = set(dl.household_ids())
     return [h for h in ids if h in on_disk]
@@ -142,7 +160,7 @@ def build_group(pv: bool) -> pd.DataFrame:
 
 
 if __name__ == "__main__":
-    for name, pv in [("pv_group", True), ("non_pv_group", False), ("all_known_group", None)]:
+    for name, pv in [("pv_group", True), ("non_pv_group", False), ("all_households_group", None)]:
         print(f"\n=== Building {name} ===")
         df = build_group(pv)
         print(
