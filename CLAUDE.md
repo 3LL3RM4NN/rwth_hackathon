@@ -54,6 +54,9 @@ python3 -m src.aggregate      # 15-min group aggregates (PV / non-PV / combined)
 python3 -m src.forecast       # LightGBM day-ahead model per group, 15-min steps -> reports/forecast_metrics.json, grouping_comparison.json
 python3 -m src.feature_ablation  # optional: leave-one-feature-out impact on portfolio-wide MAPE -> reports/feature_ablation.json
 python3 -m src.catboost_forecast  # optional: same pipeline with CatBoost instead of LightGBM -> reports/forecast_metrics_catboost.json
+python3 -m src.features          # optional: builds reports/{name}_extras_15min.csv (slow, per-household loop)
+python3 -m src.ablation          # optional: feature-group ablation vs forecast.py's current FEATURE_COLUMNS
+python3 -m src.ablation_extended # optional: ablation over src/features.py's 10 candidate groups, incl. combined-group check
 ```
 
 - `src/data_loading.py` — all raw-CSV readers (households/meta/overview/weather/15-min);
@@ -98,12 +101,47 @@ python3 -m src.catboost_forecast  # optional: same pipeline with CatBoost instea
   fully-vectorised feature construction (no per-row Python loop, no per-day groupby
   either). Same-day weather *actuals* are never used as a forecast stand-in (an earlier
   version of this pipeline did that as a brief-sanctioned simplification; that's a real
-  fix now, not just a disclosed shortcut). Also trains two `objective="quantile"` models
-  per group (`LOWER_QUANTILE`/`UPPER_QUANTILE` = 0.05/0.95) for a 90% prediction interval
-  (Level 3-style uncertainty), reporting PICP (realised coverage) and mean interval
-  width — found to be overconfident in practice (PICP 74-85% vs the 90% nominal target,
-  worse for the noisier PV group), reported honestly rather than tuned away; see the
+  fix now, not just a disclosed shortcut). `FEATURE_COLUMNS` has 44 entries: the original
+  23 plus 21 solar-geometry/local-calendar/interaction features
+  (`CALENDAR_FEATURE_COLUMNS`/`SOLAR_PV_FEATURE_COLUMNS`/`INTERACTION_FEATURE_COLUMNS`)
+  adopted from a teammate's feature-ablation study (`src/features.py`, see below) after
+  confirming the three groups still help when combined, not just individually -- see
+  `reports/beneficial_features.md` and the report's "Added features" subsection in §4.
+  `build_supervised_table(df, name)` takes the group `name` now (not just `df`), since
+  `pv_share_asof_cutoff` needs it to know whether to read the all-households group's
+  cached per-household PV composition (`reports/{name}_extras_15min.csv`, produced by
+  `src.features.build_group_extras`) or shortcut to a constant 1.0/0.0 for the
+  PV-only/non-PV-only groups. Also trains two `objective="quantile"` models per group
+  (`LOWER_QUANTILE`/`UPPER_QUANTILE` = 0.05/0.95) for a 90% prediction interval (Level
+  3-style uncertainty), reporting PICP (realised coverage) and mean interval width --
+  found to be overconfident in practice (PICP 74-80% vs the 90% nominal target, worse for
+  the noisier PV group, and notably worse for the all-households group specifically after
+  the 21-feature addition above), reported honestly rather than tuned away; see the
   report's "Uncertainty" subsection in §4.
+- `src/features.py` — ten additional *candidate* feature groups (solar geometry, local
+  calendar, consumption-history variants, weather variants, portfolio composition,
+  behavioural statistics, interactions) tested via `src/ablation.py`/
+  `src/ablation_extended.py` against `forecast.py`'s model, originally developed on a
+  teammate's branch (`julian_feature`, merged in via commit `4680738`). Three groups
+  (solar geometry, local calendar, interactions) were adopted into `forecast.py` itself
+  (see above); this module's `build_extended_table(name)` now sources those from
+  `forecast.build_supervised_table` rather than recomputing them (`PRECOMPUTED_GROUPS`),
+  and only computes the other seven, still-rejected candidate groups. `build_group_extras`
+  does a per-household loop over raw 15-min CSVs (slow -- a few minutes for 410
+  households) to get heat-pump-split and portfolio-composition columns not available from
+  `aggregate.py`'s group-level output; results are cached to
+  `reports/{name}_extras_15min.csv` via `load_group_extras`. The merge brought in two
+  bugs from the two branches having diverged on naming before merging — `all_known_group`
+  (now `all_households_group` everywhere) and `forecast.MODEL_PARAMS` (now
+  `forecast.LGBM_PARAMS`) — both fixed as part of integrating this module's findings.
+- `src/ablation.py` / `src/ablation_extended.py` — feature-group ablation harnesses:
+  retrain with one feature group added/removed, verdict from a chronological
+  fit/validation split of the *training* days only (test days are a cross-check, never
+  used to pick features) -> `reports/ablation*_results.csv`/`ablation*_table.md`.
+  `src/ablation_extended.py` additionally has a "combined" variant that adds all three
+  adopted groups at once (not just individually), which is what justified changing
+  `forecast.FEATURE_COLUMNS` — see `reports/beneficial_features.md`'s own caveat that the
+  groups were "each tested alone" and needed a combined check first.
 - `src/feature_ablation.py` — leave-one-feature-out check against the "Grouped,
   portfolio-wide" MAPE from `forecast.py`'s own grouped-vs-ungrouped comparison: retrains
   pv_group/non_pv_group with each of `FEATURE_COLUMNS` dropped in turn (same fixed
@@ -115,10 +153,12 @@ python3 -m src.catboost_forecast  # optional: same pipeline with CatBoost instea
   features, train/test split, point + quantile-interval metrics) with `CatBoostRegressor`
   instead of `LGBMRegressor`, hyperparameters chosen to roughly match LightGBM's capacity
   (not independently tuned), for a direct model-family comparison -> prints a per-group
-  LightGBM-vs-CatBoost table and writes `reports/forecast_metrics_catboost.json`.
-  LightGBM wins slightly on point accuracy (MAPE) in every group; CatBoost's quantile
-  intervals are notably better calibrated (PICP 4.7-7.3pp closer to the 90% nominal
-  target) — see the report's "Alternative model: CatBoost" subsection in §4.
+  LightGBM-vs-CatBoost table and writes `reports/forecast_metrics_catboost.json`. After
+  the 21-feature addition, point accuracy is close between the two (CatBoost edges MAPE
+  for PV, LightGBM still ahead for non-PV); CatBoost's quantile intervals remain notably
+  better calibrated (PICP 6.0-6.9pp closer to the 90% nominal target, a larger gap than
+  before the feature addition) — see the report's "Alternative model: CatBoost"
+  subsection in §4.
 
 Full write-up of methodology, results, and known simplifications: `reports/report.md`.
 ProLoaF (the brief's primary choice) was not installed/used — installing its setup code

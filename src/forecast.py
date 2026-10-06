@@ -80,6 +80,21 @@ inside the predicted interval, which should land close to 90% if the
 intervals are well calibrated) and mean interval width (sharpness -- a
 trivially wide interval gets perfect coverage for free, so width has to be
 read together with PICP, not alone).
+
+Added features: solar geometry, local calendar, interactions
+--------------------------------------------------------------
+``FEATURE_COLUMNS`` also includes 21 features beyond the original 23:
+``CALENDAR_FEATURE_COLUMNS`` (local-clock-time calendar, German public
+holidays, astronomical day length), ``SOLAR_PV_FEATURE_COLUMNS`` (solar
+elevation/clear-sky proxy at one assumed location crossed with PV share),
+and ``INTERACTION_FEATURE_COLUMNS`` (heating-degree-hours interactions and a
+temperature-sensitivity-corrected lag). These were prototyped and ablated
+group-by-group (ten candidate groups total) in ``src/features.py`` /
+``src/ablation_extended.py``; only these three came back with a validation
+benefit, and a combined check (not just each group alone) confirmed the
+gains didn't cancel out before they were adopted here -- see
+``reports/beneficial_features.md`` and the report's "Added features"
+subsection in §4.
 """
 
 from __future__ import annotations
@@ -88,6 +103,7 @@ import json
 
 import numpy as np
 import pandas as pd
+from dateutil.easter import easter
 from lightgbm import LGBMRegressor
 from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error, mean_squared_error
 
@@ -128,6 +144,17 @@ WEATHER_FEATURES = [
 ]
 TARGET = "kWh_mean_per_active_household"
 TRAIN_FRACTION = 0.8
+
+# Solar geometry / local calendar / interaction features -- prototyped and
+# ablated group-by-group in src/features.py (see reports/beneficial_features.md
+# for the evidence), adopted here after also checking the three groups
+# together didn't cancel out (src/ablation_extended.py's "combined" variant).
+LOCAL_TZ = "Europe/Berlin"
+ASSUMED_LAT = 51.16  # no station coordinates in the dataset; geographic centre of Germany
+ASSUMED_LON = 10.45
+WEATHER_CUTOFF_LAG_HOURS = 1  # whole hours before the cutoff's own hour stamp (11:00 -> 10:00)
+HEATING_DEGREE_BASE_C = 15.0
+SENSITIVITY_WINDOW_DAYS = 28
 
 LOWER_QUANTILE = 0.05
 UPPER_QUANTILE = 0.95
@@ -170,7 +197,103 @@ def load_group_15min(name: str) -> pd.DataFrame:
     return df
 
 
-def build_supervised_table(df: pd.DataFrame) -> pd.DataFrame:
+def _days(n: int) -> pd.Timedelta:
+    return pd.Timedelta(n * 24 * 60, unit="m")
+
+
+def _solar_geometry(idx: pd.DatetimeIndex) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Solar elevation (degrees), clear-sky proxy (sin of elevation, >=0) and
+    astronomical day length (hours) at the assumed location. Depends only on
+    the target timestamp, so it's known arbitrarily far ahead -- no leakage
+    concern. No station coordinates exist in the dataset, so this is a
+    textbook declination/hour-angle approximation for one assumed location,
+    not a pvlib-grade calculation."""
+    day_of_year = idx.dayofyear.to_numpy()
+    lat = np.radians(ASSUMED_LAT)
+    declination = np.radians(23.44) * np.sin(2 * np.pi * (284 + day_of_year) / 365)
+    b = 2 * np.pi * (day_of_year - 81) / 364
+    equation_of_time_min = 9.87 * np.sin(2 * b) - 7.53 * np.cos(b) - 1.5 * np.sin(b)
+    solar_hour = idx.hour.to_numpy() + idx.minute.to_numpy() / 60 + ASSUMED_LON / 15 + equation_of_time_min / 60
+    hour_angle = np.radians(15 * (solar_hour - 12))
+    sin_elevation = np.sin(lat) * np.sin(declination) + np.cos(lat) * np.cos(declination) * np.cos(hour_angle)
+    day_length = 2 * np.degrees(np.arccos(np.clip(-np.tan(lat) * np.tan(declination), -1, 1))) / 15
+    return np.degrees(np.arcsin(sin_elevation)), np.clip(sin_elevation, 0, None), day_length
+
+
+def _public_holidays(years: range) -> pd.DatetimeIndex:
+    """Nationwide German public holidays only -- the dataset doesn't name a
+    federal state, so state-specific holidays and school holidays are left
+    out."""
+    days = []
+    for year in years:
+        easter_sunday = pd.Timestamp(easter(year))
+        days += [
+            pd.Timestamp(year, 1, 1),
+            easter_sunday - _days(2),  # Good Friday
+            easter_sunday + _days(1),  # Easter Monday
+            pd.Timestamp(year, 5, 1),
+            easter_sunday + _days(39),  # Ascension
+            easter_sunday + _days(50),  # Whit Monday
+            pd.Timestamp(year, 10, 3),  # German Unity Day
+            pd.Timestamp(year, 12, 25),
+            pd.Timestamp(year, 12, 26),
+        ]
+    return pd.DatetimeIndex(days)
+
+
+def _calendar_features(idx: pd.DatetimeIndex, day_length: np.ndarray) -> dict[str, np.ndarray]:
+    """Calendar features in local clock time (``LOCAL_TZ``), which is what
+    household routines follow -- the rest of this module's calendar features
+    (hour/minute/dow/month) are in UTC. Depends only on the target timestamp,
+    known arbitrarily far ahead."""
+    local = idx.tz_convert(LOCAL_TZ)
+    local_naive = local.tz_localize(None)
+    local_date = local_naive.normalize()
+    utc_offset_hours = np.asarray((local_naive - idx.tz_localize(None)) / pd.Timedelta(60, unit="m"))
+    holidays = _public_holidays(range(local_date.year.min() - 1, local_date.year.max() + 2))
+    is_holiday = local_date.isin(holidays)
+    weekday = local_date.dayofweek
+    is_bridge_day = ~is_holiday & (
+        ((weekday == 4) & (local_date - _days(1)).isin(holidays))
+        | ((weekday == 0) & (local_date + _days(1)).isin(holidays))
+    )
+    offsets_per_day = pd.Series(utc_offset_hours).groupby(np.asarray(local_date)).transform("nunique")
+
+    easter_sunday = pd.DatetimeIndex([pd.Timestamp(easter(y)) for y in local_date.year])
+    days_from_easter = np.asarray((local_date - easter_sunday) / _days(1))
+    return {
+        "quarter_of_day_local": local.hour.to_numpy() * 4 + local.minute.to_numpy() // 15,
+        "weekday_local": weekday.to_numpy(),
+        "is_weekend_local": (weekday >= 5).astype(int),
+        "day_of_year": local_date.dayofyear.to_numpy(),
+        "is_public_holiday": np.asarray(is_holiday).astype(int),
+        "is_bridge_day": np.asarray(is_bridge_day).astype(int),
+        "is_dst": (utc_offset_hours > 1.5).astype(int),
+        "is_dst_change_day": (offsets_per_day.to_numpy() > 1).astype(int),
+        "is_christmas_period": np.asarray(
+            ((local_date.month == 12) & (local_date.day >= 24)) | ((local_date.month == 1) & (local_date.day <= 2))
+        ).astype(int),
+        "is_easter_week": ((days_from_easter >= -6) & (days_from_easter <= 1)).astype(int),
+        "day_length_hours": day_length,
+    }
+
+
+def _pv_share_asof_cutoff(name: str, cutoff_time: pd.DatetimeIndex) -> np.ndarray:
+    """Share of the households active at the cutoff that have PV. Constant by
+    construction for the PV-only/non-PV-only groups; for the all-households
+    group it's read from the per-household composition cached by
+    ``src.features.build_group_extras`` (``reports/{name}_extras_15min.csv``),
+    rather than re-walking every household's raw 15-min series here just for
+    this one ratio."""
+    if name == "pv_group":
+        return np.ones(len(cutoff_time))
+    if name == "non_pv_group":
+        return np.zeros(len(cutoff_time))
+    extras = pd.read_csv(f"reports/{name}_extras_15min.csv", index_col=0, parse_dates=True)
+    return extras["share_pv"].reindex(cutoff_time).to_numpy()
+
+
+def build_supervised_table(df: pd.DataFrame, name: str) -> pd.DataFrame:
     s = df[TARGET]
     idx = s.index
     print(f"Building supervised table over {len(idx)} 15-min timestamps (vectorised)...")
@@ -225,7 +348,69 @@ def build_supervised_table(df: pd.DataFrame) -> pd.DataFrame:
         table[f"{feat}_lag_24h"] = base.reindex(_hours_before(cutoff_time, 24)).to_numpy()
         table[f"{feat}_rolling_mean_24h_asof_cutoff"] = base_rolling_24h_mean.reindex(cutoff_time).to_numpy()
 
-    table["origin"] = idx.normalize()
+    # --- Solar geometry / local calendar / interactions (see module docstring
+    # and reports/beneficial_features.md). All of it is either a function of
+    # the target timestamp alone (known arbitrarily far ahead) or looked up at
+    # or before the same cutoff used above, so it's leakage-safe by the same
+    # argument as the rest of this function.
+    origin = idx.normalize()
+    horizon_utc = idx.hour.to_numpy() * STEPS_PER_HOUR + idx.minute.to_numpy() // 15
+    elevation, clear_sky, day_length = _solar_geometry(idx)
+    calendar_features = _calendar_features(idx, day_length)
+    for col, vals in calendar_features.items():
+        table[col] = vals
+
+    # Weather here is looked up on the true *hourly* cadence (not the 15-min
+    # series interpolated by aggregate.py), one whole hour before the cutoff's
+    # own hour stamp -- a sum over interpolated sub-hourly points wouldn't mean
+    # "hours of sunshine" any more, unlike the per-step means used elsewhere above.
+    weather_cutoff = cutoff_time.floor("h") - pd.Timedelta(WEATHER_CUTOFF_LAG_HOURS * 60, unit="m")
+
+    def at_weather_cutoff(series: pd.Series) -> np.ndarray:
+        return series.reindex(weather_cutoff).to_numpy()
+
+    hourly = df.loc[idx.minute == 0, WEATHER_FEATURES]
+    temp_hourly = hourly["Temperature_avg_hourly"]
+    sunshine_hourly = hourly["Sunshine_duration_hourly"]
+
+    sunshine_sum_24h = at_weather_cutoff(sunshine_hourly.rolling(24, min_periods=12).sum())
+    sunshine_fraction_prev_24h = sunshine_sum_24h / day_length
+    pv_share = _pv_share_asof_cutoff(name, cutoff_time)
+    table["solar_elevation_deg"] = elevation
+    table["clear_sky_proxy"] = clear_sky
+    table["pv_share_asof_cutoff"] = pv_share
+    table["sunshine_fraction_prev_24h"] = sunshine_fraction_prev_24h
+    table["clear_sky_x_pv_share"] = clear_sky * pv_share
+    table["expected_sun_x_pv_share"] = clear_sky * sunshine_fraction_prev_24h * pv_share
+
+    # Heating degree hours and temperature sensitivity feed the interaction
+    # features below; "now" has to stand in for the delivery day's own
+    # temperature with the latest known 24h mean, since no weather forecast
+    # exists in this dataset (same simplification as the rest of this module).
+    heating_degree_hours_24h = at_weather_cutoff(
+        (HEATING_DEGREE_BASE_C - temp_hourly).clip(lower=0).rolling(24, min_periods=12).sum()
+    )
+    temp_mean_24h = at_weather_cutoff(temp_hourly.rolling(24, min_periods=12).mean())
+    daily_temp = df["Temperature_avg_hourly"].groupby(origin).mean()
+    daily_load = s.groupby(origin).mean()
+    # Rolling 28-day regression slope of daily load on daily temperature, using
+    # only complete days up to D-2 (shifted by 2 below) -- kWh/15min per degree,
+    # normally negative since colder days mean more load.
+    sensitivity = (
+        daily_load.rolling(SENSITIVITY_WINDOW_DAYS, min_periods=14).cov(daily_temp)
+        / daily_temp.rolling(SENSITIVITY_WINDOW_DAYS, min_periods=14).var()
+    )
+    temp_sensitivity_28d = sensitivity.shift(2).reindex(origin).to_numpy()
+    temp_week_ago = daily_temp.shift(7).reindex(origin).to_numpy()
+    temp_delta_vs_lag_7d = temp_mean_24h - temp_week_ago
+    lag_same_tod_7d = s.shift(STEPS_PER_DAY * 7).to_numpy()
+
+    table["heating_degree_x_quarter"] = heating_degree_hours_24h * horizon_utc
+    table["heating_degree_x_weekend"] = heating_degree_hours_24h * calendar_features["is_weekend_local"]
+    table["temp_delta_vs_lag_7d"] = temp_delta_vs_lag_7d
+    table["lag_7d_weather_corrected"] = lag_same_tod_7d + temp_sensitivity_28d * temp_delta_vs_lag_7d
+
+    table["origin"] = origin
     table["target_time"] = idx
     # Not a model feature -- carried through purely so evaluation can rescale
     # the per-household-average prediction back to a group/portfolio kWh
@@ -259,11 +444,30 @@ WEATHER_FEATURE_COLUMNS = [f"{feat}_lag_24h" for feat in WEATHER_FEATURES] + [
     f"{feat}_rolling_mean_24h_asof_cutoff" for feat in WEATHER_FEATURES
 ]
 
+# The three feature groups reports/beneficial_features.md found worth keeping
+# out of the ten candidates tested in src/features.py/src/ablation_extended.py.
+CALENDAR_FEATURE_COLUMNS = [
+    "quarter_of_day_local", "weekday_local", "is_weekend_local", "day_of_year",
+    "is_public_holiday", "is_bridge_day", "is_dst", "is_dst_change_day",
+    "is_christmas_period", "is_easter_week", "day_length_hours",
+]  # fmt: skip
+SOLAR_PV_FEATURE_COLUMNS = [
+    "solar_elevation_deg", "clear_sky_proxy", "pv_share_asof_cutoff",
+    "sunshine_fraction_prev_24h", "clear_sky_x_pv_share", "expected_sun_x_pv_share",
+]  # fmt: skip
+INTERACTION_FEATURE_COLUMNS = [
+    "heating_degree_x_quarter", "heating_degree_x_weekend",
+    "temp_delta_vs_lag_7d", "lag_7d_weather_corrected",
+]  # fmt: skip
+
 FEATURE_COLUMNS = (
     [f"lag_{h}h" for h in LAG_HOURS_FROM_CUTOFF]
     + ["rolling_mean_24h_asof_cutoff", "rolling_mean_same_timeofday_7d"]
     + WEATHER_FEATURE_COLUMNS
     + ["hour", "minute", "dow", "month", "is_weekend", "horizon"]
+    + CALENDAR_FEATURE_COLUMNS
+    + SOLAR_PV_FEATURE_COLUMNS
+    + INTERACTION_FEATURE_COLUMNS
 )
 
 
@@ -276,7 +480,7 @@ def train_quantile_predict(train: pd.DataFrame, test: pd.DataFrame, alpha: float
 def train_and_evaluate(name: str, n_households: int) -> dict:
     print(f"Loading reports/{name}_15min.csv...")
     df = load_group_15min(name)
-    table = build_supervised_table(df)
+    table = build_supervised_table(df, name)
     usable = table.dropna(subset=FEATURE_COLUMNS + ["y"])
     dropped = len(table) - len(usable)
     print(f"{len(usable)}/{len(table)} rows usable after dropping missing features/target ({dropped} dropped)")

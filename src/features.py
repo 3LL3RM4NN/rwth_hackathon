@@ -1,10 +1,13 @@
 """Extended candidate features for the day-ahead model, organised in named
 groups so ``src/ablation_extended.py`` can test each group's value.
 
-Nothing here changes the production model in ``src/forecast.py``: this module
-only *adds* candidate columns to the table ``forecast.build_supervised_table``
-already builds. Which of them deserve to move into ``forecast.FEATURE_COLUMNS``
-is what the ablation is for.
+Three groups (1 calendar, 4 solar geometry x PV share, 7 interactions +
+weather-corrected lag) were found worth keeping (see
+``reports/beneficial_features.md``) and now live in
+``src/forecast.py``'s ``build_supervised_table`` itself, so ``table`` already
+has them by the time this module runs; ``PRECOMPUTED_GROUPS`` just lets the
+ablation scripts still refer to them by label. This module computes and adds
+the other, non-adopted candidate groups on top.
 
 Availability rule
 -----------------
@@ -61,18 +64,24 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from dateutil.easter import easter
 
 from src import aggregate, forecast
 from src import data_loading as dl
 
-GROUPS = {"pv_group": True, "non_pv_group": False, "all_known_group": None}
+GROUPS = {"pv_group": True, "non_pv_group": False, "all_households_group": None}
 
-LOCAL_TZ = "Europe/Berlin"
-ASSUMED_LAT = 51.16  # geographic centre of Germany
-ASSUMED_LON = 10.45
-
-WEATHER_CUTOFF_LAG_HOURS = 1  # whole hours before the cutoff's own hour stamp (11:00 -> 10:00)
+# Groups 1 (calendar), 4 (solar geometry x PV share) and 7 (interactions +
+# weather-corrected lag) were adopted into production (see
+# reports/beneficial_features.md) and now live in src/forecast.py's
+# build_supervised_table, which this module calls -- so they're already
+# present in `table` below rather than recomputed here. PRECOMPUTED_GROUPS
+# just records their column names so the ablation scripts can still refer to
+# them by label.
+PRECOMPUTED_GROUPS: dict[str, list[str]] = {
+    "1 calendar (local time, holidays, daylight)": forecast.CALENDAR_FEATURE_COLUMNS,
+    "4 PV: solar geometry x PV share": forecast.SOLAR_PV_FEATURE_COLUMNS,
+    "7 interactions + weather-corrected lag": forecast.INTERACTION_FEATURE_COLUMNS,
+}
 
 SAME_TIMEOFDAY_LAG_DAYS = [2, 3, 7, 14, 21]
 SAME_WEEKDAY_WEEKS = 4
@@ -180,72 +189,6 @@ def load_group_extras(name: str) -> pd.DataFrame:
     return pd.read_csv(path, index_col=0, parse_dates=True)
 
 
-def _public_holidays(years: range) -> pd.DatetimeIndex:
-    days = []
-    for year in years:
-        easter_sunday = pd.Timestamp(easter(year))
-        days += [
-            pd.Timestamp(year, 1, 1),
-            easter_sunday - _days(2),  # Good Friday
-            easter_sunday + _days(1),  # Easter Monday
-            pd.Timestamp(year, 5, 1),
-            easter_sunday + _days(39),  # Ascension
-            easter_sunday + _days(50),  # Whit Monday
-            pd.Timestamp(year, 10, 3),  # German Unity Day
-            pd.Timestamp(year, 12, 25),
-            pd.Timestamp(year, 12, 26),
-        ]
-    return pd.DatetimeIndex(days)
-
-
-def _solar_geometry(idx: pd.DatetimeIndex) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Solar elevation (degrees), clear-sky proxy (sin of elevation, >=0) and
-    astronomical day length (hours) at the assumed location."""
-    day_of_year = idx.dayofyear.to_numpy()
-    lat = np.radians(ASSUMED_LAT)
-    declination = np.radians(23.44) * np.sin(2 * np.pi * (284 + day_of_year) / 365)
-    b = 2 * np.pi * (day_of_year - 81) / 364
-    equation_of_time_min = 9.87 * np.sin(2 * b) - 7.53 * np.cos(b) - 1.5 * np.sin(b)
-    solar_hour = idx.hour.to_numpy() + idx.minute.to_numpy() / 60 + ASSUMED_LON / 15 + equation_of_time_min / 60
-    hour_angle = np.radians(15 * (solar_hour - 12))
-    sin_elevation = np.sin(lat) * np.sin(declination) + np.cos(lat) * np.cos(declination) * np.cos(hour_angle)
-    day_length = 2 * np.degrees(np.arccos(np.clip(-np.tan(lat) * np.tan(declination), -1, 1))) / 15
-    return np.degrees(np.arcsin(sin_elevation)), np.clip(sin_elevation, 0, None), day_length
-
-
-def _calendar_features(idx: pd.DatetimeIndex, day_length: np.ndarray) -> dict[str, np.ndarray]:
-    local = idx.tz_convert(LOCAL_TZ)
-    local_naive = local.tz_localize(None)
-    local_date = local_naive.normalize()
-    utc_offset_hours = np.asarray((local_naive - idx.tz_localize(None)) / pd.Timedelta(60, unit="m"))
-    holidays = _public_holidays(range(local_date.year.min() - 1, local_date.year.max() + 2))
-    is_holiday = local_date.isin(holidays)
-    weekday = local_date.dayofweek
-    is_bridge_day = ~is_holiday & (
-        ((weekday == 4) & (local_date - _days(1)).isin(holidays))
-        | ((weekday == 0) & (local_date + _days(1)).isin(holidays))
-    )
-    offsets_per_day = pd.Series(utc_offset_hours).groupby(np.asarray(local_date)).transform("nunique")
-
-    easter_sunday = pd.DatetimeIndex([pd.Timestamp(easter(y)) for y in local_date.year])
-    days_from_easter = np.asarray((local_date - easter_sunday) / _days(1))
-    return {
-        "quarter_of_day_local": local.hour.to_numpy() * 4 + local.minute.to_numpy() // 15,
-        "weekday_local": weekday.to_numpy(),
-        "is_weekend_local": (weekday >= 5).astype(int),
-        "day_of_year": local_date.dayofyear.to_numpy(),
-        "is_public_holiday": np.asarray(is_holiday).astype(int),
-        "is_bridge_day": np.asarray(is_bridge_day).astype(int),
-        "is_dst": (utc_offset_hours > 1.5).astype(int),
-        "is_dst_change_day": (offsets_per_day.to_numpy() > 1).astype(int),
-        "is_christmas_period": np.asarray(
-            ((local_date.month == 12) & (local_date.day >= 24)) | ((local_date.month == 1) & (local_date.day <= 2))
-        ).astype(int),
-        "is_easter_week": ((days_from_easter >= -6) & (days_from_easter <= 1)).astype(int),
-        "day_length_hours": day_length,
-    }
-
-
 def build_extended_table(name: str) -> tuple[pd.DataFrame, dict[str, list[str]]]:
     """``forecast.build_supervised_table`` plus all candidate feature groups.
 
@@ -253,13 +196,13 @@ def build_extended_table(name: str) -> tuple[pd.DataFrame, dict[str, list[str]]]
     """
     df = forecast.load_group_15min(name)
     extras = load_group_extras(name).reindex(df.index)
-    table = forecast.build_supervised_table(df)
+    table = forecast.build_supervised_table(df, name)
 
     s = df[forecast.TARGET]
     idx = s.index
     origin = idx.normalize()
     cutoff = origin - forecast.CUTOFF_GAP
-    weather_cutoff = cutoff.floor("h") - pd.Timedelta(WEATHER_CUTOFF_LAG_HOURS * 60, unit="m")
+    weather_cutoff = cutoff.floor("h") - pd.Timedelta(forecast.WEATHER_CUTOFF_LAG_HOURS * 60, unit="m")
     horizon = idx.hour.to_numpy() * forecast.STEPS_PER_HOUR + idx.minute.to_numpy() // 15
 
     def at_cutoff(series: pd.Series) -> np.ndarray:
@@ -273,10 +216,6 @@ def build_extended_table(name: str) -> tuple[pd.DataFrame, dict[str, list[str]]]
         return daily.shift(days_back).reindex(origin).to_numpy()
 
     groups: dict[str, dict[str, np.ndarray]] = {}
-    elevation, clear_sky, day_length = _solar_geometry(idx)
-
-    # --- 1. Calendar (local time) -------------------------------------------
-    groups["1 calendar (local time, holidays, daylight)"] = _calendar_features(idx, day_length)
 
     # --- 2. Consumption history ---------------------------------------------
     lags = {f"lag_same_tod_{k}d": s.shift(STEPS_PER_DAY * k).to_numpy() for k in SAME_TIMEOFDAY_LAG_DAYS}
@@ -353,18 +292,6 @@ def build_extended_table(name: str) -> tuple[pd.DataFrame, dict[str, list[str]]]
         "wx_wind_max_24h": at_weather_cutoff(wind.rolling(24, min_periods=12).max()),
     }
 
-    # --- 4. PV / solar geometry ---------------------------------------------
-    pv_share = at_cutoff(extras["share_pv"])
-    sunshine_fraction_prev_24h = sunshine_sum_24h / day_length
-    groups["4 PV: solar geometry x PV share"] = {
-        "solar_elevation_deg": elevation,
-        "clear_sky_proxy": clear_sky,
-        "pv_share_asof_cutoff": pv_share,
-        "sunshine_fraction_prev_24h": sunshine_fraction_prev_24h,
-        "clear_sky_x_pv_share": clear_sky * pv_share,
-        "expected_sun_x_pv_share": clear_sky * sunshine_fraction_prev_24h * pv_share,
-    }
-
     # --- 5. Portfolio composition (households reporting at the cutoff) ------
     composition_columns = [
         "n_active", "share_after_visit", "share_treatment", "mean_living_area", "mean_residents",
@@ -405,28 +332,14 @@ def build_extended_table(name: str) -> tuple[pd.DataFrame, dict[str, list[str]]]
         "hp_night_ratio_prev_day": from_day(hp_by_day.iloc[:, NIGHT_STEPS].mean(axis=1) / hp_by_day.mean(axis=1), 2),
     }
 
-    # --- 7. Interactions + weather-corrected lag ----------------------------
-    hdh_15 = temperature["wx_heating_degree_hours_15_24h"]
-    is_weekend_local = groups["1 calendar (local time, holidays, daylight)"]["is_weekend_local"]
-    lag_7d = lags["lag_same_tod_7d"]
-    slope = from_day(sensitivity, 2)
-    temp_week_ago = from_day(daily_temp, 7)
-    # "Now" has to be approximated by the latest known 24h mean (persistence),
-    # since day D's own temperature isn't known at the cutoff.
-    temp_delta = temp_mean_24h - temp_week_ago
-    groups["7 interactions + weather-corrected lag"] = {
-        "heating_degree_x_quarter": hdh_15 * horizon,
-        "heating_degree_x_weekend": hdh_15 * is_weekend_local,
-        "temp_delta_vs_lag_7d": temp_delta,
-        "lag_7d_weather_corrected": lag_7d + slope * temp_delta,
-    }
-
     new_columns = pd.DataFrame({col: values for features in groups.values() for col, values in features.items()})
     clash = set(new_columns.columns) & set(table.columns)
     assert not clash, f"candidate features clash with existing table columns: {clash}"
     new_columns = new_columns.replace([np.inf, -np.inf], np.nan)
     table = pd.concat([table, new_columns], axis=1)
-    return table, {label: list(features) for label, features in groups.items()}
+    feature_groups = {label: list(cols) for label, cols in groups.items()}
+    feature_groups.update(PRECOMPUTED_GROUPS)
+    return table, feature_groups
 
 
 if __name__ == "__main__":

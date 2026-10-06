@@ -246,6 +246,55 @@ split within a day).
 jointly (horizon is itself a feature), rather than 96 separate per-horizon
 models.
 
+### Added features: solar geometry, local calendar, interactions
+
+A teammate's separate branch (`src/features.py`, `src/ablation.py`,
+`src/ablation_extended.py`) prototyped ten additional candidate feature
+groups on top of the 23 above and ablated each one individually against a
+chronological validation slice of the training days (`src/ablation.py`'s
+`split_fit_validation`), with the held-out test days scored only as a
+cross-check, never used to pick features. Three groups came back with a
+validation benefit in all three series (`reports/beneficial_features.md`):
+
+- **Solar geometry × PV share** (6 features) — sun elevation and a
+  clear-sky-shape proxy at the assumed location (no station coordinates exist
+  in the dataset, so this uses the geographic centre of Germany,
+  51.16°N/10.45°E, and textbook declination/hour-angle formulas, not
+  pvlib), crossed with the share of currently-active households that have PV
+  and with yesterday's sunshine fraction.
+- **Local calendar** (11 features) — the existing calendar features are in
+  UTC; these add `Europe/Berlin` local clock time, nationwide German public
+  holidays/bridge days (school holidays and state-specific ones are left out
+  since the dataset doesn't name a federal state), DST transition flags, and
+  astronomical day length.
+- **Interactions + weather-corrected lag** (4 features) — heating degree
+  hours crossed with time-of-day and weekend flags, plus last week's
+  same-time-of-day load corrected by a rolling 28-day temperature-sensitivity
+  regression and how much colder/warmer the most recent 24h have been versus
+  a week ago.
+
+All 21 are computable at the 11:45 gate-closure cutoff from information known
+by then — same leakage rule as the rest of this section. Merging all three
+groups' column lists at once (not the original per-group test) and
+re-checking both the fit/validation split and the test days (a "combined"
+variant added to `src/ablation_extended.py`) confirmed the combination still
+helps on validation in every group — PV −9.5% (±5.2), No-PV −3.9% (±4.2),
+All-households −3.4% (±5.3) — and stays roughly neutral on test (+0.5%,
+−0.4%, −0.5%), the same pattern as the groups individually, so the gains
+don't cancel each other out. On that basis all 21 were added to
+`forecast.FEATURE_COLUMNS` (23 → 44); the computation now lives in
+`forecast.build_supervised_table` itself (`src/features.py` imports the
+column names back for its own ablation bookkeeping rather than recomputing
+them, to avoid two copies of leakage-sensitive logic drifting apart).
+
+Two bugs from merging that branch in were caught and fixed before any of
+this could be checked: `src/ablation.py`/`src/ablation_extended.py` referred
+to `forecast.MODEL_PARAMS`, which doesn't exist (`forecast.py` calls it
+`LGBM_PARAMS`), and to a group named `all_known_group`, which doesn't exist
+(`aggregate.py`/`forecast.py` call it `all_households_group`) — both are
+artifacts of the two branches having diverged on naming before the merge,
+not bugs in either branch's own logic.
+
 ### Results
 
 Units for MAE/RMSE are **kWh per household per 15-min interval** (the model's
@@ -263,11 +312,11 @@ pipeline reported directly.
 
 | Group | Households | Test period | MAE/household | MSE/household | RMSE/household | MAPE | RMSPE | MAE rescaled to total (kWh/15min) | MSE rescaled to total | Naive MAE/household (same 15-min-of-day, last week) |
 |---|---|---|---|---|---|---|---|---|---|---|
-| PV | 158 | 2023-09-05 → 2024-02-27 | 0.0544 | 0.0055 | 0.0739 | **21.6%** | 33.6% | 8.12 | 122.04 | 0.0843 |
-| No-PV | 252 | 2023-06-25 → 2024-02-27 | 0.0347 | 0.0025 | 0.0504 | **11.0%** | 14.5% | 8.18 | 140.67 | 0.0554 |
-| All-households (ungrouped) | 410 | 2023-05-30 → 2024-02-27 | 0.0328 | 0.0023 | 0.0483 | 11.9% | 15.8% | 12.60 | 345.68 | 0.0527 |
+| PV | 158 | 2023-09-06 → 2024-02-27 | 0.0547 | 0.0054 | 0.0735 | **23.6%** | 39.5% | 8.18 | 121.02 | 0.0844 |
+| No-PV | 252 | 2023-06-26 → 2024-02-27 | 0.0350 | 0.0026 | 0.0513 | **11.1%** | 14.8% | 8.25 | 145.46 | 0.0556 |
+| All-households (ungrouped) | 410 | 2023-05-30 → 2024-02-27 | 0.0331 | 0.0024 | 0.0486 | 12.2% | 16.4% | 12.73 | 349.22 | 0.0527 |
 
-RMSPE is notably higher than MAPE in every group (e.g. PV: 33.6% vs 21.6%) --
+RMSPE is notably higher than MAPE in every group (e.g. PV: 39.5% vs 23.6%) --
 expected, and consistent with the PV group's known near-zero-consumption
 midday troughs (§2): a handful of test rows where actual consumption is tiny
 get an outsized *relative* error even for a small absolute miss, and RMSPE
@@ -280,29 +329,39 @@ different for all three, since each group's test split starts wherever its
 own chronological 80/20 split lands (§4's "Did grouping actually help?"
 below re-scores all three on one shared, shorter window to make them
 comparable to each other, which changes these numbers again -- e.g.
-all-households' MAPE there is 12.9%, not the 11.9% here; same model, two
+all-households' MAPE there is 13.6%, not the 12.2% here; same model, two
 different evaluation windows, not a discrepancy).
 
-Test periods are now 2-3x longer than the surveyed-only/sum-based version's
-(e.g. PV: 6 months vs 3) since training on roughly 1-2 more years of history
-(§3) pushes the chronological 80/20 split's test boundary earlier too. The
+Test periods are about a day later than the pre-feature-addition version of
+this pipeline's, since the new features' longer lookbacks (the 28-day
+temperature-sensitivity regression in particular) drop slightly more rows at
+the start of each series, nudging the chronological 80/20 split boundary
+forward by less than a day -- not a meaningful change to the comparison. The
 model still clearly beats the naive baseline in every case (~1.5-1.65x on
 MAE/household), so there's real learned structure beyond "assume today looks
-like last week." MAPE improved meaningfully for the non-PV and all-households
-groups versus the smaller-window version of this pipeline (non-PV 13.2% ->
-11.0%, all-households 13.9% -> 11.9%) while the PV group's stayed about the
-same (21.7% -> 21.6%) -- plausibly because the newly-recovered PV-group
-history (2021-10 onward) still postdates most of the relevant PV-adoption
-period for these households, so it didn't add much *new kind* of pattern,
-whereas the no-PV group's much longer recovered history (back to 2020-10)
-gave the model more winters/summers of heat-pump-only behaviour to learn
-from.
+like last week."
 
-Top features by gain, both groups: `horizon`, `rolling_mean_same_timeofday_7d`,
-and `hour` dominate -- the model leans heavily on "what does this specific
-quarter-hour of the day typically look like" now that weather is both
-leakage-free *and* possibly up to 36h stale by the time it's used (full
-tables in `reports/forecast_metrics.json`).
+**Point accuracy is essentially flat to slightly worse on this held-out test
+period** after adding the 21 new features (PV MAPE 21.6% → 23.6%, No-PV
+11.0% → 11.1%, all-households 11.9% → 12.2%). This isn't a contradiction of
+the evidence that justified adding them -- that evidence was from a
+validation slice of the *training* days, and `reports/beneficial_features.md`
+explicitly flagged the combined effect as "neutral" on the test days even
+before this integration; this is that same honest caveat showing up again
+once the features are live in the production model, not cherry-picked away.
+The features still earn their place by split-gain (see below) and by the
+validation-level check in the previous subsection; it just means their
+benefit shows up more reliably in-sample / near-term than on this particular
+unseen stretch of months.
+
+Top features by gain: the model still leans heavily on the target's own
+recent history (`rolling_mean_same_timeofday_7d`, `rolling_mean_24h_asof_cutoff`)
+and on time-of-day, but the *encoding* of time-of-day that wins by gain has
+shifted -- `quarter_of_day_local` (the new local-clock-time version) now
+outranks the old UTC `horizon`/`hour` in two of three groups, and the new
+`heating_degree_x_quarter` and `temp_delta_vs_lag_7d` interaction features
+place in the top 5 for every group (full tables in
+`reports/forecast_metrics.json`).
 
 ### Uncertainty: 90% prediction intervals (Level 3)
 
@@ -317,35 +376,44 @@ group.
 
 | Group | PICP (realised coverage) | Mean interval width/household | Mean interval width, rescaled to total (kWh/15min) |
 |---|---|---|---|
-| PV | **73.9%** | 0.1556 | 23.24 |
-| No-PV | **79.8%** | 0.1105 | 26.04 |
-| All-households | **85.0%** | 0.1156 | 44.35 |
+| PV | **73.8%** | 0.1539 | 22.90 |
+| No-PV | **79.9%** | 0.1079 | 25.26 |
+| All-households | **75.8%** | 0.0918 | 35.46 |
 
 **Honest finding: these intervals are overconfident.** Nominal coverage is
-90%; realised coverage (PICP) is 74-85%, meaning the actual value falls
-*outside* the predicted "90%" band 15-26% of the time -- substantially more
-often than it should. This isn't a bug (0 quantile crossings, and the
-pattern is monotonic and explicable -- see below); it's a genuine
-calibration gap in naively-trained quantile regression, which is itself a
-useful thing to have measured rather than assumed away: a point forecast
-with an uncalibrated "90% interval" stapled onto it is arguably worse than
-no interval at all for a procurement decision, since it invites
+90%; realised coverage (PICP) is 74-80%, meaning the actual value falls
+*outside* the predicted "90%" band 20-26% of the time -- substantially more
+often than it should. This isn't a bug (0 quantile crossings in any group);
+it's a genuine calibration gap in naively-trained quantile regression, which
+is itself a useful thing to have measured rather than assumed away: a point
+forecast with an uncalibrated "90% interval" stapled onto it is arguably
+worse than no interval at all for a procurement decision, since it invites
 over-confidence in exactly the situations (PV, most volatile) where caution
 matters most.
 
-The miscalibration tracks group volatility in a sensible direction: PICP is
-worst for the PV group (73.9%, also the group with the highest MAPE, 21.6%)
-and best for the all-households group (85.0%, also the lowest MAPE, 11.9%)
--- the harder a group is to forecast at all, the more its naively-trained
-quantile models underestimate how wide the interval needs to be to actually
-hit 90%. A standard fix for this (not implemented here, out of scope for
-this pass) is **conformal calibration**: use a held-out calibration fold to
-measure the realised miscalibration and widen the interval post-hoc until it
-actually achieves the nominal rate, rather than trusting the raw quantile
-regression output. Reporting the gap honestly here, rather than silently
-widening the quantiles until PICP looked good, is the point -- that would
-just be fitting the evaluation metric instead of fixing the underlying
-model.
+PICP for PV and No-PV barely moved after adding the 21 features above
+(73.9%→73.8%, 79.8%→79.9%); **the all-households group's PICP dropped
+noticeably, 85.0%→75.8%**, with a correspondingly narrower mean interval
+(0.1156→0.0918 kWh/household). The quantile models are trained completely
+independently of the point model and of each other, so a larger feature set
+giving them more ways to carve up the training data doesn't have to improve
+calibration -- it can just as easily let the 5%/95% quantile regressions fit
+more confidently (hence narrower) to patterns in the training period that
+don't hold up as well on the held-out test months, especially for the
+all-households series, whose PV-vs-non-PV composition actually drifts over
+time (unlike the two single-composition groups) and is exactly what several
+of the new features (`pv_share_asof_cutoff` and the features built on it)
+are keyed to. This is the same honest-reporting principle as before, just a
+new instance of it: the calibration gap didn't improve and in one case
+visibly widened, and that's reported as-is rather than tuned away.
+
+The remaining miscalibration still tracks group volatility in the same
+direction as before: PICP is worst for the PV group (73.8%, also the group
+with the highest MAPE, 23.6%). A standard fix for this (not implemented
+here, out of scope for this pass) is **conformal calibration**: use a
+held-out calibration fold to measure the realised miscalibration and widen
+the interval post-hoc until it actually achieves the nominal rate, rather
+than trusting the raw quantile regression output.
 
 ### Alternative model: CatBoost
 
@@ -363,115 +431,117 @@ either library is better once properly tuned.
 
 | Group | Metric | LightGBM | CatBoost | Delta |
 |---|---|---|---|---|
-| PV | MAPE | 21.6% | 22.2% | +0.64pp |
-| PV | RMSPE | 33.6% | 34.9% | +1.37pp |
-| PV | MAE/household | 0.0544 | 0.0546 | +0.0003 |
-| PV | MSE/household | 0.005455 | 0.005440 | **-0.000015** |
-| PV | PICP (90% nominal) | 73.9% | **81.1%** | **+7.3pp** |
-| No-PV | MAPE | 11.0% | 11.3% | +0.34pp |
-| No-PV | RMSPE | 14.5% | 14.8% | +0.28pp |
-| No-PV | MAE/household | 0.0347 | 0.0354 | +0.0007 |
-| No-PV | MSE/household | 0.002542 | 0.002549 | +0.000006 |
-| No-PV | PICP (90% nominal) | 79.8% | **86.1%** | **+6.3pp** |
-| All-households | MAPE | 11.9% | 12.3% | +0.38pp |
-| All-households | RMSPE | 15.8% | 16.2% | +0.39pp |
-| All-households | MAE/household | 0.0328 | 0.0337 | +0.0009 |
-| All-households | MSE/household | 0.002335 | 0.002434 | +0.000098 |
-| All-households | PICP (90% nominal) | 85.0% | **89.7%** | **+4.7pp** |
+| PV | MAPE | 23.6% | 23.6% | **-0.07pp** |
+| PV | RMSPE | 39.5% | 38.3% | **-1.20pp** |
+| PV | MAE/household | 0.0547 | 0.0545 | **-0.0003** |
+| PV | MSE/household | 0.005404 | 0.005323 | **-0.000081** |
+| PV | PICP (90% nominal) | 73.8% | **80.7%** | **+6.9pp** |
+| No-PV | MAPE | 11.1% | 11.6% | +0.48pp |
+| No-PV | RMSPE | 14.8% | 15.3% | +0.45pp |
+| No-PV | MAE/household | 0.0350 | 0.0355 | +0.0005 |
+| No-PV | MSE/household | 0.002627 | 0.002583 | **-0.000045** |
+| No-PV | PICP (90% nominal) | 79.9% | **86.0%** | **+6.0pp** |
+| All-households | MAPE | 12.2% | 12.2% | ~0.00pp |
+| All-households | RMSPE | 16.4% | 16.2% | **-0.23pp** |
+| All-households | MAE/household | 0.0331 | 0.0329 | **-0.0002** |
+| All-households | MSE/household | 0.002362 | 0.002281 | **-0.000080** |
+| All-households | PICP (90% nominal) | 75.8% | **82.5%** | **+6.6pp** |
 
-RMSPE agrees with MAPE in direction for all three groups (unlike MSE, which
-flipped for PV) -- LightGBM is consistently a little better on both
-percentage-scale metrics.
+**The point-accuracy picture flipped after adding the 21 new features.**
+Before, LightGBM won on both MAPE and RMSPE in every group; now CatBoost is
+equal-or-better on RMSPE, MSE and MAE in every group, and MAPE is a near-tie
+for PV and all-households (CatBoost actually edges it on PV) with LightGBM
+still clearly ahead only for the No-PV group. This isn't evidence that
+CatBoost "is better now" in any general sense -- neither model's
+hyperparameters were tuned against this feature set, so it just means the
+two libraries respond differently to a wider, more interaction-heavy feature
+set with these particular (fixed, not re-tuned) capacities, which is exactly
+the kind of thing a single out-of-the-box comparison like this can surface
+but can't fully explain.
 
-**MAE and MSE even disagree with each other for the PV group.** CatBoost's
-MAE is worse there (0.0546 vs 0.0544), but its MSE is very slightly *better*
-(0.005440 vs 0.005455) -- L1 and L2 loss weight errors differently (L2
-penalizes large errors disproportionately more), so a model can have a
-slightly higher *average* absolute error while having a slightly lower
-*average squared* error, if it's trading a few more small errors for fewer
-large ones. The effect is tiny here (both within noise of each other at this
-test-set size) and the two metrics agree in direction for the other two
-groups, so this isn't a case for preferring one model over the other on L2
-specifically -- it's just a reminder that L1 and L2 errors aren't
-interchangeable, and a model that's "better" on one isn't guaranteed to be
-better on the other.
+**On uncertainty calibration, CatBoost remains clearly and consistently
+better, and the gap widened.** PICP improves by 6.0-6.9 percentage points in
+every group, a larger, more uniform margin than before the 21 features were
+added (4.7-7.3pp then, with more spread across groups) -- CatBoost's
+quantile models held up better against the larger feature set than
+LightGBM's did: LightGBM's all-households PICP fell the furthest of any
+group after the feature addition (85.0%→75.8%, see above), while CatBoost's
+corresponding number only fell to 82.5%. This does come at the cost of wider
+intervals, which is part of *why* coverage improves, but the gap-to-nominal
+still closes by more than the width grows in every group, so this remains a
+genuinely better-calibrated quantile model for this data, not just a
+trivially wider one.
 
-**Two different findings depending on which metric you look at.** On raw
-point-forecast accuracy, LightGBM is consistently a little better than
-CatBoost across all three groups -- MAPE worse by 0.3-0.6 percentage points,
-MAE/household worse by under 0.001 kWh/15min -- small but completely
-consistent in direction, so this isn't noise. But on **uncertainty
-calibration, CatBoost is clearly better**: PICP improves by 4.7-7.3
-percentage points in every group, and for all-households it lands at 89.7%
-against the 90% nominal target -- essentially perfectly calibrated,
-out of the box, with no tuning. This does come at the cost of wider
-intervals (mean width up ~15-18% relative), which is part of *why* coverage
-improves -- but the gap-to-nominal closes by far more than the width grows
-(e.g. all-households: the 5.0-point coverage gap shrinks to 0.3 points, a
-~94% reduction, for an 18% wider interval), so this isn't just "wider is
-trivially better," it's a genuinely better-calibrated quantile model for
-this data.
-
-The practical takeaway: neither model is a strict winner. If the point
-forecast itself is what matters most (e.g. feeding a single bid number),
-LightGBM's small-but-consistent MAPE edge makes it the better default here.
-If the prediction interval is what actually gets used for risk management
-(Level 3's whole point), CatBoost's much better out-of-the-box calibration
-is the more important property, and would be worth the small point-accuracy
-cost. Full per-group metrics: `reports/forecast_metrics_catboost.json`.
+The practical takeaway: neither model is a strict winner, and it's less
+clear-cut than before on point accuracy specifically now that MAPE is close
+or favours CatBoost in two of three groups. If the point forecast itself is
+what matters most (e.g. feeding a single bid number), there's no longer a
+consistent across-the-board edge for either library on this feature set --
+it would be worth checking per group. If the prediction interval is what
+actually gets used for risk management (Level 3's whole point), CatBoost's
+better out-of-the-box calibration is the clear, consistent property here,
+and if anything more so than before. Full per-group metrics:
+`reports/forecast_metrics_catboost.json`.
 
 ### Feature ablation: does "gain" importance match real impact?
 
 `src/feature_ablation.py` checks that directly: retrain pv_group and
-non_pv_group with each one of the 23 features left out in turn (same fixed
-train/test rows as the baseline throughout, so a feature's measured effect
-is only ever about its presence/absence, never a side effect of a different
-row set), and recompute the **portfolio-wide MAPE** from "did grouping help"
-below for each. Baseline (all features): **12.644%**
-(`reports/feature_ablation.json`).
+non_pv_group with each one of the (now 44) features left out in turn (same
+fixed train/test rows as the baseline throughout, so a feature's measured
+effect is only ever about its presence/absence, never a side effect of a
+different row set), and recompute the **portfolio-wide MAPE** from "did
+grouping help" below for each. Baseline (all features): **13.267%**
+(`reports/feature_ablation.json`) -- higher than the pre-feature-addition
+version's 12.644%, consistent with this being test-set MAPE and the 21 new
+features' own validation-level benefit not fully transferring to this test
+period (see "Point accuracy" above).
 
 | Rank | Feature removed | MAPE | Delta vs. baseline |
 |---|---|---|---|
-| 1 (most costly to remove) | `rolling_mean_24h_asof_cutoff` | 13.317% | **+0.672pp** |
-| 2 | `rolling_mean_same_timeofday_7d` | 13.151% | +0.507pp |
-| 3 | `Precipitation_total_hourly_rolling_mean_24h_asof_cutoff` | 12.847% | +0.203pp |
-| ... | (18 more features, small effects either way) | | |
-| 22 | `WindSpeed_hourly_lag_24h` | 12.518% | -0.126pp |
-| 23 (most "helpful" to remove) | `lag_24h` | 12.461% | **-0.183pp** |
+| 1 (most costly to remove) | `rolling_mean_24h_asof_cutoff` | 13.874% | **+0.607pp** |
+| 2 | `lag_168h` | 13.496% | +0.228pp |
+| 3 | `WindSpeed_hourly_rolling_mean_24h_asof_cutoff` | 13.433% | +0.165pp |
+| ... | (39 more features, small effects either way) | | |
+| 43 | `day_of_year` | 13.055% | -0.212pp |
+| 44 (most "helpful" to remove) | `day_length_hours` | 12.991% | **-0.276pp** |
 
-Two things stand out, consistent with the earlier (smaller-training-window)
-version of this check. First, the two features that matter by a wide margin
-are the target's own recent-history summaries
-(`rolling_mean_24h_asof_cutoff`, `rolling_mean_same_timeofday_7d`) -- removing
-either one costs ~3-5x more MAPE than any other single feature, confirming
-that persistence-style information about the target itself is doing most of
-the real work, with weather and calendar features each contributing only a
-little on their own. (The two swapped rank #1/#2 versus the earlier,
-shorter-training-window version of this check, but remain clearly the top
-two by a wide margin either way.)
+The target's own recent-history summary (`rolling_mean_24h_asof_cutoff`)
+remains by far the single most costly feature to lose, as in the
+pre-integration version of this check, though `rolling_mean_same_timeofday_7d`
+(previously #2) has dropped out of the top 3, overtaken by `lag_168h` and a
+wind-speed rolling feature -- a reminder that with 44 candidate features
+competing for the same splits, exactly which ones look "most important"
+shifts once new, partially-redundant information is available for the model
+to lean on instead.
 
-Second, and more interesting: **`horizon` ranks top-2 in the "gain" importance
-table above, but removing it doesn't hurt at all** (delta -0.065pp, among the
-more "helpful to remove" features, not shown in the table above but see
-`reports/feature_ablation.json`). Gain-based importance measures how much a
-feature was used for splits *during training*; it says nothing about whether
-that usage actually helps generalise to the held-out test period. A plausible
-explanation here: `horizon` is highly correlated with (duplicates much of the
-same ordering information as) `hour` and `minute`, so the model leans on it
-heavily during training *as one of several redundant ways to encode
-time-of-day*, but dropping it costs nothing because `hour`/`minute` already
-carry the same signal. `lag_24h` is the single most "helpful to remove"
-feature this time (-0.183pp) -- plausibly because it's the noisiest, least
-smoothed of the target's own history features, and the model may lean on it
-in ways that don't generalise as well as the smoothed alternatives
-(`rolling_mean_24h_asof_cutoff`, `rolling_mean_same_timeofday_7d`) already
-covering similar ground. None of these negative-delta effects are large
-enough (all under 0.2pp) to be fully confident they'd replicate on a
-different test period, but the practical takeaway holds: gain-based
-importance is a reasonable guide to what the model is *using*, but
-leave-one-out against held-out data is the more trustworthy guide to what
-actually matters if you were deciding which features to keep in a
-simplified/faster model.
+Among the 21 new features specifically, the picture is mixed, which matches
+the "neutral on test" caveat from `reports/beneficial_features.md` and the
+section above: `quarter_of_day_local` (+0.091pp) and
+`heating_degree_x_quarter` (+0.072pp) rank in the top 10 most costly to
+remove -- genuinely earning their place on this test period too -- while a
+handful of others, mostly from the solar-geometry/calendar groups
+(`day_length_hours` -0.276pp, `day_of_year` -0.212pp, `heating_degree_x_weekend`
+-0.175pp, `solar_elevation_deg` -0.142pp), are individually "helpful to
+remove" here, in the same sense `lag_24h` and `horizon` already were before
+this integration (see below) -- a feature can still have been worth adding
+as part of its *group* (the combined-group check in the subsection above
+is what actually justified adding it) while not individually surviving a
+leave-one-out test against this specific test period on its own.
+
+Separately, the pre-existing finding about gain vs. real impact still
+holds and gets a second confirmation: **`horizon` still ranks high by gain
+but costs essentially nothing to remove** (-0.053pp, rank 27/44), and `hour`
+costs exactly 0.000pp (rank 17/44) -- both still redundant with other
+time-of-day encodings, now including the new `quarter_of_day_local`.
+`lag_24h` remains one of the more "helpful to remove" original features
+(-0.082pp), for the same reason as before: it's the noisiest, least smoothed
+version of the target's own recent history, largely redundant with the
+smoothed alternatives. None of these negative-delta effects are large enough
+(all under 0.3pp) to be fully confident they'd replicate on a different test
+period, but the practical takeaway holds: gain-based importance is a
+reasonable guide to what the model is *using*, but leave-one-out against
+held-out data is the more trustworthy guide to what actually matters if you
+were deciding which features to keep in a simplified/faster model.
 
 ### Did grouping actually help? (Level 2: comparing the models on day-ahead-procurement-relevant metrics)
 
@@ -480,13 +550,13 @@ comparable as-is — each model's test window is "that series' own last 20% of
 days," and the series have different stable windows (§3), so they cover
 different calendar periods. The fix is to re-score the **same three trained
 models** on one **shared, shorter** test window instead: the latest of the
-three individual test-start dates, 2023-09-05 (`pv_group`'s own start,
+three individual test-start dates, 2023-09-06 (`pv_group`'s own start,
 since it has the least recovered history of the three -- see §3). Concretely,
 this means every number in the table below is that same model evaluated on a
 *subset* of the rows used for its Results-table row above -- e.g.
-`all_households_group`'s MAPE drops from 12.9% here back to 11.9% in the
+`all_households_group`'s MAPE drops from 13.6% here back to 12.2% in the
 Results table purely because the Results table also includes
-2023-05-30–2023-09-04, a stretch this particular model happened to forecast
+2023-05-30–2023-09-05, a stretch this particular model happened to forecast
 more easily; nothing about the model itself changed between the two tables.
 Restricting to one shared window like this is necessary *before* we can even
 ask the second, more important question this section is really about: *how*
@@ -507,48 +577,64 @@ prediction back to a kWh total via its own `active_household_count`, sums the
 then scores that one combined series -- i.e. it measures what a desk bidding
 PV + no-PV as a single combined position would actually see.
 
-**Test period for every row below: 2023-09-05 → 2024-02-27** (the shared
+**Test period for every row below: 2023-09-06 → 2024-02-27** (the shared
 window described above -- not each model's own full test period from the
 Results table).
 
 | Approach | Test period | Portfolio MAE (kWh/15min) | MSE | RMSE | MAPE | RMSPE |
 |---|---|---|---|---|---|---|
-| Single ungrouped model (all 410 households) | 2023-09-05 → 2024-02-27 | 16.64 | 513.94 | 22.67 | 12.9% | 17.2% |
-| Grouped, **naive MAE sum** (wrong -- see above) | 2023-09-05 → 2024-02-27 | *18.25* | — | — | — | — |
-| Grouped, **portfolio-wide** (correct) | 2023-09-05 → 2024-02-27 | **16.45** | **509.26** | **22.57** | **12.6%** | **16.8%** |
+| Single ungrouped model (all 410 households) | 2023-09-06 → 2024-02-27 | 17.09 | 525.60 | 22.93 | 13.6% | 18.3% |
+| Grouped, **naive MAE sum** (wrong -- see above) | 2023-09-06 → 2024-02-27 | *18.50* | — | — | — | — |
+| Grouped, **portfolio-wide** (correct) | 2023-09-06 → 2024-02-27 | **16.83** | **522.09** | **22.85** | **13.3%** | **17.9%** |
 
-**With roughly 1-2 extra years of training history (§3), grouping now shows a
-real, consistent edge across every metric again.** The portfolio-wide
-approach beats the single ungrouped model on MAE (16.45 vs 16.64, ~1.1%
-lower), MSE (509.26 vs 513.94), RMSE (22.57 vs 22.67), MAPE (12.6% vs 12.9%),
-and RMSPE (16.8% vs 17.2%) -- a modest but directionally unambiguous win
-across every metric including L2's percentage-scale counterpart, unlike the
-near-tie/mixed-signal result from
-the shorter-training-window version of this pipeline. The naive sum is still
-clearly the wrong way to compare them regardless (18.25, well above both real
-numbers). A plausible explanation for why grouping's edge reappeared: more
-training history per group gives each group's model more opportunity to
-learn genuinely group-specific patterns (not just noise), so the
-detector-labelled households' ~11% label-error rate (§2) matters
-proportionally less than it did against a much shorter, noisier-relative-to-
-its-length training window.
+**Grouping still shows a consistent, if modest, edge across every metric
+after adding the 21 new features**, same conclusion as before the
+integration. The portfolio-wide approach beats the single ungrouped model on
+MAE (16.83 vs 17.09, ~1.5% lower), MSE (522.09 vs 525.60), RMSE (22.85 vs
+22.93), MAPE (13.3% vs 13.6%), and RMSPE (17.9% vs 18.3%) -- directionally
+unambiguous, though the absolute gap is similar to slightly smaller than
+before the feature addition (then: 16.45 vs 16.64 MAE, a ~1.1% gap on a
+lower base). The naive sum is still clearly the wrong way to compare them
+regardless (18.50, well above both real numbers). The explanation for why
+grouping helps at all is unchanged: more training history per group gives
+each group's model more opportunity to learn genuinely group-specific
+patterns (not just noise), so the detector-labelled households' ~11%
+label-error rate (§2) matters proportionally less than it would against a
+much shorter training window.
 
 Separately from the portfolio-wide total, grouping still clearly pays off for
 **relative accuracy and risk characterisation at the segment level**: the
-pooled model's 12.9% MAPE (common window) hides that the PV segment is
-forecast notably less reliably (21.6% MAPE) than the no-PV segment (11.8%
-MAPE) -- a 9.8-point gap, if anything larger than the previous, shorter-window
-version's 8.5-point gap. For day-ahead procurement, that gap matters for risk
-management on top of the portfolio-wide total now also favouring grouping --
-it tells E.ON exactly where forecast risk concentrates (the PV-owning
-segment, driven by weather-dependent self-consumption) and where a wider
-safety margin / more conservative procurement buffer is warranted, which
-Level 3's uncertainty framing would act on directly. A single ungrouped model
-would never surface that.
+pooled model's 13.6% MAPE (common window) hides that the PV segment is
+forecast notably less reliably (23.6% MAPE) than the no-PV segment (12.1%
+MAPE) -- an 11.5-point gap, larger than the pre-integration version's
+9.8-point gap, consistent with the PV group being the one where the new
+features' point accuracy slipped the most (see "Point accuracy" above). For
+day-ahead procurement, that gap matters for risk management on top of the
+portfolio-wide total now also favouring grouping -- it tells E.ON exactly
+where forecast risk concentrates (the PV-owning segment, driven by
+weather-dependent self-consumption) and where a wider safety margin / more
+conservative procurement buffer is warranted, which Level 3's uncertainty
+framing would act on directly. A single ungrouped model would never surface
+that.
 
 ## 5. Summary of simplifications / honesty notes
 
 - ProLoaF skipped in favour of LightGBM (sandbox permission, §1).
+- The 21 solar-geometry/calendar/interaction features added in §4 were
+  selected on a validation slice of the *training* days, exactly like every
+  other feature-selection decision in this pipeline (§4's feature ablation);
+  the honest result on the actual held-out test period is flat-to-slightly
+  worse point accuracy in every group and a notably worse-calibrated
+  prediction interval for the all-households group specifically (§4,
+  "Uncertainty") -- reported as-is rather than only reporting the
+  validation-level numbers that motivated adding them in the first place.
+- Assumes one fixed location (Germany's geographic centre) for every
+  household's solar geometry and local time zone, since the dataset gives no
+  per-household coordinates; and only nationwide German public holidays,
+  since it doesn't name a federal state (§4). Both are the same kind of
+  "best available proxy, not individually correct" simplification as the
+  single assumed weather-forecast-as-actuals treatment elsewhere in this
+  pipeline.
 - Forecasting groups now use the *surveyed* PV flag where it exists, falling
   back to §2's detector output for the 165 unsurveyed households (an earlier
   version of this pipeline excluded all 165 from both groups entirely). The

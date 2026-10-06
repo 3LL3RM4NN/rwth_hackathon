@@ -18,58 +18,58 @@ feature group removed. MAE is in kWh per 15 min for the group sum.
 
 | Features removed | # | Val MAE | Δ val MAE | Test MAE | Δ test MAE | Verdict (from val) |
 |---|---:|---:|---:|---:|---:|---|
-| (none: full model) | 0 | 6.221 | | 9.442 | | |
-| all target history | 5 | 7.407 | +19.0% ± 13.3 | 12.920 | +36.8% ± 10.4 | keep |
-| target lags as of cutoff | 4 | 6.830 | +9.8% ± 6.0 | 10.413 | +10.3% ± 6.9 | keep |
-| same-time-of-day 7d mean | 1 | 6.768 | +8.8% ± 7.4 | 10.239 | +8.4% ± 5.8 | keep |
-| all weather | 12 | 6.275 | +0.9% ± 7.1 | 9.688 | +2.6% ± 4.7 | no clear effect |
-| day of week (dow, is_weekend) | 2 | 6.248 | +0.4% ± 3.7 | 9.572 | +1.4% ± 1.9 | no clear effect |
-| time of day (hour, minute, horizon) | 3 | 6.240 | +0.3% ± 3.3 | 9.903 | +4.9% ± 6.4 | no clear effect |
-| weather: Humidity_avg_hourly | 2 | 6.166 | -0.9% ± 2.1 | 9.679 | +2.5% ± 2.1 | no clear effect |
-| weather: WindSpeed_hourly | 2 | 6.164 | -0.9% ± 5.8 | 9.266 | -1.9% ± 3.1 | no clear effect |
-| weather: DewPoint_hourly | 2 | 6.150 | -1.1% ± 3.1 | 9.501 | +0.6% ± 1.4 | no clear effect |
-| weather: Sunshine_duration_hourly | 2 | 6.117 | -1.7% ± 3.1 | 9.573 | +1.4% ± 2.1 | no clear effect |
-| weather: Precipitation_total_hourly | 2 | 6.111 | -1.8% ± 2.5 | 9.479 | +0.4% ± 1.6 | no clear effect |
-| all calendar/time | 6 | 6.101 | -1.9% ± 5.7 | 9.980 | +5.7% ± 6.6 | no clear effect |
-| weather: Temperature_avg_hourly | 2 | 6.098 | -2.0% ± 2.5 | 9.318 | -1.3% ± 1.3 | no clear effect |
-| month | 1 | 5.938 | -4.6% ± 3.2 | 9.608 | +1.8% ± 1.7 | drop candidate |
+| (none: full model) | 0 | 0.028 | | 0.055 | | |
+| all target history | 5 | 0.029 | +2.6% ± 3.5 | 0.061 | +11.9% ± 5.2 | no clear effect |
+| time of day (hour, minute, horizon) | 3 | 0.028 | +0.5% ± 2.0 | 0.054 | -0.5% ± 1.2 | no clear effect |
+| all calendar/time | 6 | 0.028 | +0.5% ± 1.6 | 0.055 | -0.3% ± 1.2 | no clear effect |
+| weather: Sunshine_duration_hourly | 2 | 0.028 | +0.4% ± 2.4 | 0.055 | -0.1% ± 1.5 | no clear effect |
+| day of week (dow, is_weekend) | 2 | 0.028 | -0.1% ± 2.1 | 0.055 | -0.2% ± 1.1 | no clear effect |
+| month | 1 | 0.028 | -0.2% ± 1.3 | 0.055 | +0.2% ± 1.2 | no clear effect |
+| all weather | 12 | 0.028 | -0.6% ± 4.2 | 0.056 | +2.8% ± 3.0 | no clear effect |
+| weather: Temperature_avg_hourly | 2 | 0.028 | -0.7% ± 1.9 | 0.055 | +0.3% ± 1.6 | no clear effect |
+| weather: Humidity_avg_hourly | 2 | 0.027 | -1.1% ± 2.1 | 0.055 | -0.3% ± 1.5 | no clear effect |
+| same-time-of-day 7d mean | 1 | 0.027 | -1.8% ± 3.0 | 0.055 | +0.3% ± 3.5 | no clear effect |
+| weather: Precipitation_total_hourly | 2 | 0.027 | -2.8% ± 2.1 | 0.056 | +1.8% ± 1.9 | drop candidate |
+| target lags as of cutoff | 4 | 0.027 | -3.1% ± 1.8 | 0.057 | +3.4% ± 2.8 | drop candidate |
+| weather: WindSpeed_hourly | 2 | 0.027 | -3.5% ± 2.4 | 0.055 | -0.0% ± 1.6 | drop candidate |
+| weather: DewPoint_hourly | 2 | 0.027 | -4.0% ± 2.9 | 0.055 | +0.5% ± 1.6 | drop candidate |
 
 ## non_pv_group
 
 | Features removed | # | Val MAE | Δ val MAE | Test MAE | Δ test MAE | Verdict (from val) |
 |---|---:|---:|---:|---:|---:|---|
-| (none: full model) | 0 | 2.056 | | 6.391 | | |
-| all target history | 5 | 2.716 | +32.1% ± 8.8 | 7.338 | +14.8% ± 8.0 | keep |
-| same-time-of-day 7d mean | 1 | 2.280 | +10.9% ± 4.6 | 6.693 | +4.7% ± 5.5 | keep |
-| all calendar/time | 6 | 2.258 | +9.8% ± 4.3 | 6.783 | +6.1% ± 4.0 | keep |
-| day of week (dow, is_weekend) | 2 | 2.162 | +5.2% ± 2.8 | 6.519 | +2.0% ± 2.2 | keep |
-| time of day (hour, minute, horizon) | 3 | 2.127 | +3.5% ± 2.9 | 6.666 | +4.3% ± 3.9 | keep |
-| month | 1 | 2.057 | +0.0% ± 1.4 | 6.379 | -0.2% ± 1.5 | no clear effect |
-| weather: Precipitation_total_hourly | 2 | 2.052 | -0.2% ± 1.8 | 6.464 | +1.1% ± 2.3 | no clear effect |
-| target lags as of cutoff | 4 | 2.049 | -0.3% ± 2.8 | 6.324 | -1.0% ± 3.6 | no clear effect |
-| weather: Humidity_avg_hourly | 2 | 2.045 | -0.5% ± 1.3 | 6.437 | +0.7% ± 1.8 | no clear effect |
-| weather: Temperature_avg_hourly | 2 | 2.036 | -1.0% ± 1.9 | 6.431 | +0.6% ± 4.2 | no clear effect |
-| weather: WindSpeed_hourly | 2 | 2.036 | -1.0% ± 2.3 | 6.458 | +1.1% ± 2.8 | no clear effect |
-| all weather | 12 | 2.033 | -1.1% ± 3.8 | 6.772 | +6.0% ± 6.5 | no clear effect |
-| weather: Sunshine_duration_hourly | 2 | 2.033 | -1.1% ± 1.8 | 6.400 | +0.2% ± 1.6 | no clear effect |
-| weather: DewPoint_hourly | 2 | 2.019 | -1.8% ± 2.3 | 6.416 | +0.4% ± 1.9 | no clear effect |
+| (none: full model) | 0 | 0.046 | | 0.035 | | |
+| all target history | 5 | 0.051 | +10.4% ± 5.0 | 0.038 | +8.3% ± 4.2 | keep |
+| target lags as of cutoff | 4 | 0.048 | +4.6% ± 3.0 | 0.036 | +3.5% ± 2.8 | keep |
+| all weather | 12 | 0.048 | +3.8% ± 4.0 | 0.036 | +2.0% ± 4.0 | no clear effect |
+| weather: WindSpeed_hourly | 2 | 0.048 | +3.7% ± 2.5 | 0.035 | -0.4% ± 2.5 | keep |
+| same-time-of-day 7d mean | 1 | 0.047 | +1.9% ± 3.8 | 0.035 | -0.9% ± 2.9 | no clear effect |
+| weather: Temperature_avg_hourly | 2 | 0.046 | +1.1% ± 2.1 | 0.034 | -1.6% ± 1.8 | no clear effect |
+| weather: Sunshine_duration_hourly | 2 | 0.046 | +0.2% ± 2.0 | 0.035 | -0.6% ± 1.6 | no clear effect |
+| day of week (dow, is_weekend) | 2 | 0.046 | -0.2% ± 1.4 | 0.035 | -0.7% ± 1.3 | no clear effect |
+| time of day (hour, minute, horizon) | 3 | 0.046 | -0.3% ± 1.4 | 0.035 | -0.7% ± 1.6 | no clear effect |
+| all calendar/time | 6 | 0.046 | -0.5% ± 1.5 | 0.036 | +1.4% ± 1.5 | no clear effect |
+| month | 1 | 0.046 | -0.5% ± 1.1 | 0.035 | -0.8% ± 1.2 | no clear effect |
+| weather: DewPoint_hourly | 2 | 0.046 | -0.8% ± 2.1 | 0.035 | +0.4% ± 1.8 | no clear effect |
+| weather: Precipitation_total_hourly | 2 | 0.045 | -1.6% ± 1.9 | 0.035 | -0.0% ± 1.8 | no clear effect |
+| weather: Humidity_avg_hourly | 2 | 0.045 | -2.2% ± 2.1 | 0.036 | +1.4% ± 1.8 | drop candidate |
 
-## all_known_group
+## all_households_group
 
 | Features removed | # | Val MAE | Δ val MAE | Test MAE | Δ test MAE | Verdict (from val) |
 |---|---:|---:|---:|---:|---:|---|
-| (none: full model) | 0 | 9.156 | | 15.033 | | |
-| all target history | 5 | 11.905 | +30.0% ± 17.5 | 18.767 | +24.8% ± 9.5 | keep |
-| target lags as of cutoff | 4 | 9.618 | +5.0% ± 5.8 | 15.762 | +4.9% ± 6.6 | no clear effect |
-| same-time-of-day 7d mean | 1 | 9.526 | +4.0% ± 9.9 | 15.964 | +6.2% ± 4.8 | no clear effect |
-| day of week (dow, is_weekend) | 2 | 9.277 | +1.3% ± 3.8 | 15.483 | +3.0% ± 2.6 | no clear effect |
-| all calendar/time | 6 | 9.260 | +1.1% ± 5.2 | 16.332 | +8.6% ± 6.5 | no clear effect |
-| time of day (hour, minute, horizon) | 3 | 9.236 | +0.9% ± 3.9 | 15.973 | +6.3% ± 5.6 | no clear effect |
-| weather: DewPoint_hourly | 2 | 9.183 | +0.3% ± 2.8 | 15.020 | -0.1% ± 2.0 | no clear effect |
-| month | 1 | 9.117 | -0.4% ± 2.4 | 15.115 | +0.5% ± 1.8 | no clear effect |
-| weather: Humidity_avg_hourly | 2 | 9.116 | -0.4% ± 2.2 | 15.242 | +1.4% ± 2.3 | no clear effect |
-| weather: Temperature_avg_hourly | 2 | 9.095 | -0.7% ± 3.1 | 15.348 | +2.1% ± 2.2 | no clear effect |
-| weather: WindSpeed_hourly | 2 | 9.089 | -0.7% ± 3.6 | 14.813 | -1.5% ± 4.8 | no clear effect |
-| all weather | 12 | 9.063 | -1.0% ± 7.6 | 16.073 | +6.9% ± 6.6 | no clear effect |
-| weather: Sunshine_duration_hourly | 2 | 8.931 | -2.5% ± 3.6 | 15.328 | +2.0% ± 2.3 | no clear effect |
-| weather: Precipitation_total_hourly | 2 | 8.911 | -2.7% ± 2.2 | 15.270 | +1.6% ± 2.9 | drop candidate |
+| (none: full model) | 0 | 0.048 | | 0.033 | | |
+| all target history | 5 | 0.054 | +12.2% ± 6.3 | 0.035 | +6.5% ± 4.1 | keep |
+| all weather | 12 | 0.051 | +4.7% ± 3.5 | 0.036 | +7.6% ± 4.5 | keep |
+| same-time-of-day 7d mean | 1 | 0.051 | +4.3% ± 3.3 | 0.033 | +0.4% ± 3.2 | keep |
+| weather: WindSpeed_hourly | 2 | 0.050 | +4.1% ± 2.4 | 0.033 | -0.5% ± 2.7 | keep |
+| weather: Temperature_avg_hourly | 2 | 0.050 | +2.5% ± 1.9 | 0.033 | +0.1% ± 1.6 | keep |
+| target lags as of cutoff | 4 | 0.049 | +2.0% ± 3.5 | 0.033 | +0.3% ± 3.2 | no clear effect |
+| weather: Sunshine_duration_hourly | 2 | 0.049 | +1.6% ± 1.9 | 0.033 | -0.1% ± 1.9 | no clear effect |
+| weather: DewPoint_hourly | 2 | 0.049 | +0.8% ± 1.8 | 0.033 | -0.4% ± 1.8 | no clear effect |
+| weather: Humidity_avg_hourly | 2 | 0.049 | +0.6% ± 2.1 | 0.033 | -1.2% ± 1.9 | no clear effect |
+| day of week (dow, is_weekend) | 2 | 0.049 | +0.3% ± 1.1 | 0.033 | +0.5% ± 1.3 | no clear effect |
+| month | 1 | 0.049 | +0.3% ± 0.7 | 0.033 | -0.5% ± 1.4 | no clear effect |
+| time of day (hour, minute, horizon) | 3 | 0.048 | -0.2% ± 1.7 | 0.033 | +0.4% ± 1.7 | no clear effect |
+| weather: Precipitation_total_hourly | 2 | 0.048 | -0.3% ± 1.8 | 0.033 | -0.7% ± 2.1 | no clear effect |
+| all calendar/time | 6 | 0.048 | -0.5% ± 1.5 | 0.033 | +0.5% ± 1.5 | no clear effect |

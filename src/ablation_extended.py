@@ -46,7 +46,7 @@ SECTION_NOTES = {
 
 
 def _abs_errors(fit: pd.DataFrame, score: pd.DataFrame, columns: list[str], target: str = "level") -> pd.Series:
-    model = LGBMRegressor(**forecast.MODEL_PARAMS)
+    model = LGBMRegressor(**forecast.LGBM_PARAMS)
     if target == "level":
         model.fit(fit[columns], fit["y"])
         pred = model.predict(score[columns])
@@ -113,6 +113,21 @@ def run_group(name: str) -> pd.DataFrame:
 
     for label, cols in groups.items():
         record(SECTION_ADD, label, current + cols, errors(current + cols), current_errs, addition_verdict)
+
+    # The three groups found individually beneficial in reports/beneficial_features.md
+    # (solar geometry, local calendar, interactions) were each tested alone there; this
+    # checks whether their gains still hold when added together, as that report's own
+    # caveat asks for before forecast.FEATURE_COLUMNS is changed.
+    beneficial_labels = [
+        "4 PV: solar geometry x PV share",
+        "1 calendar (local time, holidays, daylight)",
+        "7 interactions + weather-corrected lag",
+    ]
+    combined_cols = [c for label in beneficial_labels for c in groups[label]]
+    record(
+        SECTION_ADD, "combined: solar geometry + calendar + interactions", current + combined_cols,
+        errors(current + combined_cols), current_errs, addition_verdict,
+    )  # fmt: skip
 
     for label, cols in groups.items():
         kept = [c for c in extended if c not in cols]

@@ -40,7 +40,7 @@ GROUPS = ["pv_group", "non_pv_group"]
 
 def prepare_group(name: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     df = load_group_15min(name)
-    table = build_supervised_table(df)
+    table = build_supervised_table(df, name)
     usable = table.dropna(subset=FEATURE_COLUMNS + ["y"])
     return chronological_split(usable)
 

@@ -43,7 +43,7 @@ from lightgbm import LGBMRegressor
 
 from src import forecast
 
-GROUP_NAMES = ["pv_group", "non_pv_group", "all_known_group"]
+GROUP_NAMES = ["pv_group", "non_pv_group", "all_households_group"]
 VALIDATION_FRACTION = 0.2  # share of the *training* days held back for feature selection
 
 TARGET_LAGS_ASOF_CUTOFF = [f"lag_{h}h" for h in forecast.LAG_HOURS_FROM_CUTOFF] + ["rolling_mean_24h_asof_cutoff"]
@@ -82,7 +82,7 @@ def split_fit_validation(train: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFram
 
 
 def _abs_errors(fit: pd.DataFrame, score: pd.DataFrame, columns: list[str]) -> pd.Series:
-    model = LGBMRegressor(**forecast.MODEL_PARAMS)
+    model = LGBMRegressor(**forecast.LGBM_PARAMS)
     model.fit(fit[columns], fit["y"])
     return (score["y"] - model.predict(score[columns])).abs()
 
@@ -105,7 +105,7 @@ def removal_verdict(delta_pct: float, ci_pct: float) -> str:
 
 def run_group(name: str) -> pd.DataFrame:
     print(f"\n=== Ablation for {name} ===")
-    table = forecast.build_supervised_table(forecast.load_group_15min(name))
+    table = forecast.build_supervised_table(forecast.load_group_15min(name), name)
     usable = table.dropna(subset=forecast.FEATURE_COLUMNS + ["y"])
     train, test = forecast.chronological_split(usable)
     fit, val = split_fit_validation(train)

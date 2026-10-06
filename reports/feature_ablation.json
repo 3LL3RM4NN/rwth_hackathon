@@ -1,98 +1,182 @@
 {
-  "common_test_window_start": "2023-09-05 00:00:00+00:00",
-  "baseline_mape": 0.12644018334479812,
+  "common_test_window_start": "2023-09-06 00:00:00+00:00",
+  "baseline_mape": 0.13267285140564963,
   "mape_by_feature_removed": {
     "rolling_mean_24h_asof_cutoff": {
-      "mape": 0.13316505586477784,
-      "delta_pp": 0.6724872519979719
-    },
-    "rolling_mean_same_timeofday_7d": {
-      "mape": 0.1315110952103387,
-      "delta_pp": 0.5070911865540595
-    },
-    "Precipitation_total_hourly_rolling_mean_24h_asof_cutoff": {
-      "mape": 0.12847216160418024,
-      "delta_pp": 0.20319782593821167
-    },
-    "DewPoint_hourly_rolling_mean_24h_asof_cutoff": {
-      "mape": 0.12820192479523596,
-      "delta_pp": 0.1761741450437837
+      "mape": 0.13873806032806252,
+      "delta_pp": 0.6065208922412885
     },
     "lag_168h": {
-      "mape": 0.1280897593256244,
-      "delta_pp": 0.16495759808262955
+      "mape": 0.13495563398534113,
+      "delta_pp": 0.22827825796915002
     },
     "WindSpeed_hourly_rolling_mean_24h_asof_cutoff": {
-      "mape": 0.12761757771801635,
-      "delta_pp": 0.11773943732182324
-    },
-    "month": {
-      "mape": 0.12737323703244743,
-      "delta_pp": 0.09330536876493156
-    },
-    "Temperature_avg_hourly_lag_24h": {
-      "mape": 0.1272383938624319,
-      "delta_pp": 0.07982105176337906
+      "mape": 0.13432645190202028,
+      "delta_pp": 0.1653600496370644
     },
     "DewPoint_hourly_lag_24h": {
-      "mape": 0.12714565125979363,
-      "delta_pp": 0.07054679149955112
+      "mape": 0.13431262386829354,
+      "delta_pp": 0.1639772462643907
     },
-    "Humidity_avg_hourly_rolling_mean_24h_asof_cutoff": {
-      "mape": 0.12697794436752008,
-      "delta_pp": 0.05377610227219609
+    "Precipitation_total_hourly_rolling_mean_24h_asof_cutoff": {
+      "mape": 0.13365181082669042,
+      "delta_pp": 0.0978959421040787
     },
-    "dow": {
-      "mape": 0.12674640105794777,
-      "delta_pp": 0.030621771314964796
+    "quarter_of_day_local": {
+      "mape": 0.13358277128505547,
+      "delta_pp": 0.0909919879405835
     },
-    "Sunshine_duration_hourly_rolling_mean_24h_asof_cutoff": {
-      "mape": 0.12667691413299204,
-      "delta_pp": 0.023673078819391735
+    "heating_degree_x_quarter": {
+      "mape": 0.13339098091335005,
+      "delta_pp": 0.07181295077004213
     },
     "Sunshine_duration_hourly_lag_24h": {
-      "mape": 0.12658734830378818,
-      "delta_pp": 0.014716495899005921
+      "mape": 0.13331561806052572,
+      "delta_pp": 0.06427666548760869
     },
-    "hour": {
-      "mape": 0.12644076953998523,
-      "delta_pp": 5.861951871133364e-05
+    "Temperature_avg_hourly_lag_24h": {
+      "mape": 0.1330531455105805,
+      "delta_pp": 0.03802941049308728
+    },
+    "weekday_local": {
+      "mape": 0.132966261048023,
+      "delta_pp": 0.02934096423733712
+    },
+    "is_dst": {
+      "mape": 0.1327451277527446,
+      "delta_pp": 0.007227634709497388
+    },
+    "is_bridge_day": {
+      "mape": 0.13272895628321146,
+      "delta_pp": 0.0056104877561830024
     },
     "is_weekend": {
-      "mape": 0.12644018334479812,
+      "mape": 0.13267285140564963,
       "delta_pp": 0.0
     },
-    "minute": {
-      "mape": 0.12630790262090083,
-      "delta_pp": -0.013228072389728784
+    "is_weekend_local": {
+      "mape": 0.13267285140564963,
+      "delta_pp": 0.0
     },
-    "Precipitation_total_hourly_lag_24h": {
-      "mape": 0.12595334363085972,
-      "delta_pp": -0.04868397139383973
+    "pv_share_asof_cutoff": {
+      "mape": 0.13267285140564963,
+      "delta_pp": 0.0
     },
-    "horizon": {
-      "mape": 0.12579342309150549,
-      "delta_pp": -0.06467602532926331
+    "clear_sky_x_pv_share": {
+      "mape": 0.13267285140564963,
+      "delta_pp": 0.0
     },
-    "Temperature_avg_hourly_rolling_mean_24h_asof_cutoff": {
-      "mape": 0.12574467863224073,
-      "delta_pp": -0.06955047125573877
+    "hour": {
+      "mape": 0.1326715364622995,
+      "delta_pp": -0.00013149433501224994
     },
-    "Humidity_avg_hourly_lag_24h": {
-      "mape": 0.1256627206415707,
-      "delta_pp": -0.07774627032274273
+    "dow": {
+      "mape": 0.13258712899156389,
+      "delta_pp": -0.008572241408574821
     },
-    "lag_48h": {
-      "mape": 0.1253424475686094,
-      "delta_pp": -0.1097735776188713
+    "Sunshine_duration_hourly_rolling_mean_24h_asof_cutoff": {
+      "mape": 0.13247738064825948,
+      "delta_pp": -0.019547075739015374
     },
     "WindSpeed_hourly_lag_24h": {
-      "mape": 0.12518342381273406,
-      "delta_pp": -0.12567595320640557
+      "mape": 0.13245035305231373,
+      "delta_pp": -0.022249835333590373
+    },
+    "temp_delta_vs_lag_7d": {
+      "mape": 0.132404492824966,
+      "delta_pp": -0.02683585806836364
+    },
+    "DewPoint_hourly_rolling_mean_24h_asof_cutoff": {
+      "mape": 0.13235522820215892,
+      "delta_pp": -0.03176232034907134
+    },
+    "lag_48h": {
+      "mape": 0.13233344509641073,
+      "delta_pp": -0.03394063092388988
+    },
+    "minute": {
+      "mape": 0.13227048673347047,
+      "delta_pp": -0.04023646721791618
+    },
+    "rolling_mean_same_timeofday_7d": {
+      "mape": 0.13222979876303365,
+      "delta_pp": -0.044305264261598754
+    },
+    "month": {
+      "mape": 0.13217853259436346,
+      "delta_pp": -0.04943188112861707
+    },
+    "horizon": {
+      "mape": 0.13214290684300667,
+      "delta_pp": -0.05299445626429644
+    },
+    "expected_sun_x_pv_share": {
+      "mape": 0.1321222237161953,
+      "delta_pp": -0.055062768945432494
+    },
+    "sunshine_fraction_prev_24h": {
+      "mape": 0.13212163339206062,
+      "delta_pp": -0.0551218013589011
+    },
+    "is_easter_week": {
+      "mape": 0.13208195506722756,
+      "delta_pp": -0.059089633842207556
+    },
+    "is_christmas_period": {
+      "mape": 0.1320784775705345,
+      "delta_pp": -0.05943738351151251
+    },
+    "Humidity_avg_hourly_lag_24h": {
+      "mape": 0.13205962848724248,
+      "delta_pp": -0.06132229184071525
+    },
+    "lag_7d_weather_corrected": {
+      "mape": 0.131881980478268,
+      "delta_pp": -0.07908709273816428
     },
     "lag_24h": {
-      "mape": 0.12460870049264128,
-      "delta_pp": -0.18314828521568405
+      "mape": 0.13185531259493985,
+      "delta_pp": -0.08175388107097836
+    },
+    "is_public_holiday": {
+      "mape": 0.13154877394460962,
+      "delta_pp": -0.11240774610400128
+    },
+    "clear_sky_proxy": {
+      "mape": 0.13147357237884014,
+      "delta_pp": -0.11992790268094966
+    },
+    "is_dst_change_day": {
+      "mape": 0.13146169726190157,
+      "delta_pp": -0.12111541437480611
+    },
+    "Humidity_avg_hourly_rolling_mean_24h_asof_cutoff": {
+      "mape": 0.13135416182124166,
+      "delta_pp": -0.13186895844079782
+    },
+    "solar_elevation_deg": {
+      "mape": 0.13125384763765907,
+      "delta_pp": -0.1419003767990562
+    },
+    "Precipitation_total_hourly_lag_24h": {
+      "mape": 0.13104939785704506,
+      "delta_pp": -0.16234535486045754
+    },
+    "heating_degree_x_weekend": {
+      "mape": 0.13092197347412796,
+      "delta_pp": -0.17508779315216771
+    },
+    "Temperature_avg_hourly_rolling_mean_24h_asof_cutoff": {
+      "mape": 0.13090925968945555,
+      "delta_pp": -0.1763591716194085
+    },
+    "day_of_year": {
+      "mape": 0.13055049154472756,
+      "delta_pp": -0.2122359860922074
+    },
+    "day_length_hours": {
+      "mape": 0.129908928886321,
+      "delta_pp": -0.27639225193286376
     }
   }
 }

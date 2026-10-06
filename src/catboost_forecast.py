@@ -60,7 +60,7 @@ def train_quantile_predict(train: pd.DataFrame, test: pd.DataFrame, alpha: float
 def train_and_evaluate(name: str, n_households: int) -> dict:
     print(f"Loading reports/{name}_15min.csv...")
     df = load_group_15min(name)
-    table = build_supervised_table(df)
+    table = build_supervised_table(df, name)
     usable = table.dropna(subset=FEATURE_COLUMNS + ["y"])
     dropped = len(table) - len(usable)
     print(f"{len(usable)}/{len(table)} rows usable after dropping missing features/target ({dropped} dropped)")
