@@ -58,8 +58,12 @@ def group_household_ids(pv: bool | None) -> list[str]:
 def build_group_consumption(household_ids: list[str]) -> pd.DataFrame:
     """Per-hour summed consumption and active-household count for a group."""
     series = {}
-    for hid in household_ids:
+    n = len(household_ids)
+    print(f"Loading+resampling 15-min data for {n} households...")
+    for i, hid in enumerate(household_ids, start=1):
         series[hid] = household_hourly_total(hid)
+        if i % 50 == 0 or i == n:
+            print(f"  {i}/{n} households done")
     wide = pd.DataFrame(series).sort_index()
     active_count = wide.notna().sum(axis=1)
     group_sum = wide.sum(axis=1, min_count=1)
@@ -85,6 +89,8 @@ def restrict_to_stable_window(df: pd.DataFrame, n_households: int) -> pd.DataFra
 def build_group_weather(household_ids: list[str]) -> pd.DataFrame:
     households = dl.load_households()
     station_counts = households.loc[household_ids, "Weather_ID"].value_counts()
+    counts_str = ", ".join(f"{wid}={int(n)}" for wid, n in station_counts.items())
+    print(f"Building weighted weather from {len(station_counts)} station(s): {counts_str}")
 
     station_frames = {wid: dl.load_weather(wid).set_index("Timestamp") for wid in station_counts.index}
     all_timestamps = sorted(set().union(*(f.index for f in station_frames.values())))
@@ -107,6 +113,7 @@ def build_group_weather(household_ids: list[str]) -> pd.DataFrame:
 
 def build_group(pv: bool) -> pd.DataFrame:
     ids = group_household_ids(pv)
+    print(f"Group has {len(ids)} households with a 15-min file on disk.")
     consumption = build_group_consumption(ids)
     consumption = restrict_to_stable_window(consumption, len(ids))
     weather = build_group_weather(ids)
@@ -118,6 +125,7 @@ def build_group(pv: bool) -> pd.DataFrame:
 
 if __name__ == "__main__":
     for name, pv in [("pv_group", True), ("non_pv_group", False), ("all_known_group", None)]:
+        print(f"\n=== Building {name} ===")
         df = build_group(pv)
         print(
             f"{name}: n_households={df.attrs['n_households']}, "

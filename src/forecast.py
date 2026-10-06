@@ -67,7 +67,9 @@ def build_supervised_table(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     rows = []
-    for origin in origins:
+    n_origins = len(origins)
+    print(f"Building supervised table over {n_origins} candidate origin-days x 24h...")
+    for i, origin in enumerate(origins, start=1):
         for h in range(24):
             t = origin + pd.Timedelta(hours=h)
             if t not in s.index:
@@ -88,6 +90,8 @@ def build_supervised_table(df: pd.DataFrame) -> pd.DataFrame:
             row["month"] = t.month
             row["is_weekend"] = int(t.dayofweek >= 5)
             rows.append(row)
+        if i % 100 == 0 or i == n_origins:
+            print(f"  {i}/{n_origins} origin-days done")
 
     table = pd.DataFrame(rows)
     return table
@@ -111,13 +115,16 @@ FEATURE_COLUMNS = (
 
 
 def train_and_evaluate(name: str, n_households: int) -> dict:
+    print(f"Loading reports/{name}_hourly.csv...")
     df = load_group_hourly(name)
     table = build_supervised_table(df)
     usable = table.dropna(subset=FEATURE_COLUMNS + ["y"])
     dropped = len(table) - len(usable)
+    print(f"{len(usable)}/{len(table)} rows usable after dropping missing features/target ({dropped} dropped)")
 
     train, test = chronological_split(usable)
 
+    print(f"Training LightGBM on {len(train)} rows (400 estimators)...")
     model = LGBMRegressor(
         n_estimators=400,
         learning_rate=0.05,
@@ -127,6 +134,7 @@ def train_and_evaluate(name: str, n_households: int) -> dict:
         verbosity=-1,
     )
     model.fit(train[FEATURE_COLUMNS], train["y"])
+    print(f"Evaluating on {len(test)} held-out rows...")
     pred = model.predict(test[FEATURE_COLUMNS])
 
     mae = mean_absolute_error(test["y"], pred)
@@ -175,6 +183,7 @@ def train_and_evaluate(name: str, n_households: int) -> dict:
 if __name__ == "__main__":
     results = {}
     for name, pv in [("pv_group", True), ("non_pv_group", False), ("all_known_group", None)]:
+        print(f"\n=== Training {name} ===")
         n_households = len(aggregate.group_household_ids(pv))
         res = train_and_evaluate(name, n_households)
         results[name] = res
@@ -193,6 +202,7 @@ if __name__ == "__main__":
     # across groups (series start at different points due to meter rollout),
     # so their MAE numbers above aren't directly comparable to each other.
     # Re-score all three on the single latest common test window instead.
+    print("\nRe-scoring all groups on the common held-out test window...")
     common_start = max(r["test_origin_range"][0] for r in results.values())
     comparison = {}
     for name, res in results.items():

@@ -30,6 +30,7 @@ def load_features() -> pd.DataFrame:
 
 
 def main() -> None:
+    print("Loading PV-pattern features...")
     df = load_features()
     known = df[df["Installation_HasPVSystem"].isin([True, False])].copy()
     X = known[FEATURE_COLUMNS]
@@ -43,6 +44,7 @@ def main() -> None:
     # Out-of-fold predictions: every household is scored by a model that never
     # saw it during training, so these metrics are a fair estimate of how the
     # detector would do on an unsurveyed household.
+    print(f"Running 5-fold out-of-fold cross-validation on {len(y)} labelled households...")
     oof_proba = cross_val_predict(clf, X, y, cv=cv, method="predict_proba")[:, 1]
     oof_pred = oof_proba >= 0.5
 
@@ -68,8 +70,10 @@ def main() -> None:
     # Fit on all known-label data, then score the unsurveyed households as a
     # secondary, detector-based grouping (not used for the Level-1 forecasting
     # split itself -- see module docstring).
+    print("\nFitting final classifier on all labelled households...")
     clf.fit(X, y)
     unknown = df[df["Installation_HasPVSystem"].isna()].copy()
+    print(f"Scoring {len(unknown)} unsurveyed households...")
     unknown_proba = clf.predict_proba(unknown[FEATURE_COLUMNS])[:, 1]
     unknown_pred = pd.Series(unknown_proba >= 0.5, index=unknown.index, name="detected_pv")
 
@@ -79,6 +83,7 @@ def main() -> None:
     # Persist everything the downstream aggregation/report steps need.
     # HistGradientBoostingClassifier has no built-in feature_importances_, so
     # use permutation importance (drop in mean ROC AUC when a column is shuffled).
+    print("Computing permutation importance (20 repeats per feature)...")
     perm = permutation_importance(
         clf, X, y, scoring="roc_auc", n_repeats=20, random_state=0
     )

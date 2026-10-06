@@ -132,7 +132,9 @@ def build_feature_table(household_ids: list[str] | None = None) -> pd.DataFrame:
         household_ids = dl.household_ids()
 
     rows = []
-    for hid in household_ids:
+    n = len(household_ids)
+    print(f"Computing PV-pattern features for {n} households...")
+    for i, hid in enumerate(household_ids, start=1):
         weather_id = households.loc[hid, "Weather_ID"] if hid in households.index else None
         sunshine_ok = bool(
             weather_id is not None
@@ -140,6 +142,8 @@ def build_feature_table(household_ids: list[str] | None = None) -> pd.DataFrame:
             and avail.loc[weather_id, "Sunshine_duration_hourly"]
         )
         rows.append(compute_features_for_household(hid, weather_id, sunshine_ok))
+        if i % 50 == 0 or i == n:
+            print(f"  {i}/{n} households done")
 
     feats = pd.DataFrame(rows).set_index("Household_ID")
     feats = feats.join(households[["Group", "Weather_ID", "Installation_HasPVSystem"]])
